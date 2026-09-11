@@ -179,7 +179,8 @@ return function(context)
                 end
             end)
         end
-        if active("Timed challenges") and not active("Smart challenges") and os.clock() - lastCycle >= 600 then
+        local interval = context.settings and context.settings.ChallengeInterval or 600
+        if active("Timed challenges") and not active("Smart challenges") and os.clock() - lastCycle >= math.clamp(interval, 60, 1800) then
             guard.run("Timed challenges", function() fire("CycleNewChallenges"); lastCycle = os.clock() end)
         end
     end

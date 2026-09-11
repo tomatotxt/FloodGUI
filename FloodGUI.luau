@@ -8,7 +8,7 @@ getgenv().FloodGUIRecordings = Recordings
 -- Credits:
 --      TAS System: Tomato (Base by Voiz#5668)
 --      Reverse Engineering/Base GUI: Tomato
---      UI Library: xHeptc (Kavo)
+--      UI Library: Airflow
 -- ==============================================================================
 
 -- ==============================================================================
@@ -71,7 +71,7 @@ local AddedWaiting = RemoteFolder:WaitForChild("AddedWaiting")
 local AlertRemote = RemoteFolder:WaitForChild("Alert")
 
 local CONFIG = {
-    UI_LIBRARY_PATH = "vendor/kavo.luau",
+    UI_LIBRARY_PATH = "vendor/airflow.luau",
     TAS_CREATOR_PATH = "TAS/CREATOR/creator.luau",
     TAS_PLAYER_PATH = "TAS/PLAYER/newtasplayer.luau",
     DISCORD_INVITE = "https://discord.gg/8N2M9fHJqa"
@@ -90,14 +90,7 @@ local COLORS = {
     Item    = Color3.fromRGB(170, 85, 255)
 }
 
--- Custom Kavo UI Theme
-local KAVO_THEME = {
-    SchemeColor = Color3.fromRGB(0, 100, 255),
-    Background = Color3.fromRGB(35, 35, 40),
-    Header = Color3.fromRGB(25, 25, 30),
-    TextColor = Color3.fromRGB(255, 255, 255),
-    ElementColor = Color3.fromRGB(50, 50, 55)
-}
+
 
 -- ==============================================================================
 -- [3] STATE MANAGEMENT
@@ -105,6 +98,15 @@ local KAVO_THEME = {
 _G.LoopCancel = false
 
 local State = {
+    AutoJoinLift = true,
+    AntiAFK = true,
+    RebirthInterval = 60,
+    ChallengeInterval = 600,
+    MovementOverrides = true,
+    InterfaceScale = 1,
+    Notifications = true,
+    PlaybackSpeed = 1,
+    SwimSmoothness = 0.04,
     StartDelay = 0,
     ResetDelay = 0,
     ResetAfterEscape = false,
@@ -171,6 +173,7 @@ local CLMAIN = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("CL_MAIN_G
 local CLMAINenv = nil
 pcall(function() CLMAINenv = getsenv(CLMAIN) end)
 
+local UI
 local function Alert(Text, ColorType)
     local Output = tostring(Text)
     local SelectedColor = COLORS[ColorType] or COLORS.System
@@ -180,6 +183,7 @@ local function Alert(Text, ColorType)
             CLMAINenv.newAlert(Output, SelectedColor, nil, nil)
         end)
     end
+    if UI then UI.notify(Output, ColorType) end
     print("[FloodGUI]: " .. Output)
 end
 
@@ -187,7 +191,7 @@ local Advanced
 local advancedOK, advancedResult = pcall(function()
     return Runtime.run("advanced.luau")({runtime = Runtime, remotes = RemoteFolder,
         environment = CLMAINenv, player = LocalPlayer, session = Session,
-        track = TrackConnection, alert = Alert})
+        track = TrackConnection, alert = Alert, settings = State})
 end)
 if advancedOK then
     Advanced = advancedResult
@@ -315,267 +319,7 @@ end
 -- ==============================================================================
 -- [5] CUSTOM TAS FILE MANAGER (SEPARATE UI)
 -- ==============================================================================
-local function OpenTASFileManager()
-    local CoreGui = game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
-    if CoreGui:FindFirstChild("TAS_FileManager") then
-        CoreGui.TAS_FileManager.Enabled = not CoreGui.TAS_FileManager.Enabled
-        return
-    end
 
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "TAS_FileManager"
-    ScreenGui.Parent = CoreGui
-    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 500, 0, 420)
-    MainFrame.Position = UDim2.new(0.5, -250, 0.5, -210)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Parent = ScreenGui
-
-    local UICorner = Instance.new("UICorner", MainFrame)
-    UICorner.CornerRadius = UDim.new(0, 8)
-
-    local TopBar = Instance.new("Frame")
-    TopBar.Size = UDim2.new(1, 0, 0, 35)
-    TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    TopBar.BorderSizePixel = 0
-    TopBar.Parent = MainFrame
-    Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 8)
-
-    local FixSquare = Instance.new("Frame", TopBar)
-    FixSquare.Size = UDim2.new(1, 0, 0, 8)
-    FixSquare.Position = UDim2.new(0, 0, 1, -8)
-    FixSquare.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    FixSquare.BorderSizePixel = 0
-
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -40, 1, 0)
-    Title.Position = UDim2.new(0, 15, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.Text = "TAS File Manager"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 14
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Parent = TopBar
-
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 35, 0, 35)
-    CloseBtn.Position = UDim2.new(1, -35, 0, 0)
-    CloseBtn.BackgroundTransparency = 1
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 14
-    CloseBtn.Parent = TopBar
-    CloseBtn.MouseButton1Click:Connect(function() ScreenGui.Enabled = false end)
-
-    -- Draggable Logic
-    local dragging, dragInput, dragStart, startPos
-    TopBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-        end
-    end)
-    TopBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    -- Layout
-    local ContentFrame = Instance.new("Frame", MainFrame)
-    ContentFrame.Size = UDim2.new(1, -20, 1, -145)
-    ContentFrame.Position = UDim2.new(0, 10, 0, 45)
-    ContentFrame.BackgroundTransparency = 1
-
-    local function CreateList(titleTxt, posX)
-        local Frame = Instance.new("Frame", ContentFrame)
-        Frame.Size = UDim2.new(0.5, -5, 1, 0)
-        Frame.Position = UDim2.new(posX, 0, 0, 0)
-        Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-        Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 6)
-
-        local Lbl = Instance.new("TextLabel", Frame)
-        Lbl.Size = UDim2.new(1, 0, 0, 25)
-        Lbl.BackgroundTransparency = 1
-        Lbl.Text = titleTxt
-        Lbl.TextColor3 = COLORS.Info
-        Lbl.Font = Enum.Font.GothamBold
-        Lbl.TextSize = 13
-
-        local Scroll = Instance.new("ScrollingFrame", Frame)
-        Scroll.Size = UDim2.new(1, -10, 1, -30)
-        Scroll.Position = UDim2.new(0, 5, 0, 25)
-        Scroll.BackgroundTransparency = 1
-        Scroll.BorderSizePixel = 0
-        Scroll.ScrollBarThickness = 4
-        Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-        local UIListLayout = Instance.new("UIListLayout", Scroll)
-        UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        UIListLayout.Padding = UDim.new(0, 3)
-
-        return Scroll, UIListLayout
-    end
-
-    local OnlineList, OnlineLayout = CreateList("Bundled TAS Files", 0)
-    local LocalList, LocalLayout = CreateList("Local TAS Files (Workspace)", 0.5 + (5/480))
-
-    local function AddItemToList(scroll, layout, txt)
-        local lbl = Instance.new("TextLabel", scroll)
-        lbl.Size = UDim2.new(1, 0, 0, 20)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = " • " .. txt
-        lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-        lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 12
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y)
-    end
-
-    local function RefreshLocalList()
-        for _, v in ipairs(LocalList:GetChildren()) do if v:IsA("TextLabel") then v:Destroy() end end
-        if getgenv().listfiles and getgenv().isfolder then
-            if not isfolder(Runtime.root) then makefolder(Runtime.root) end
-            if not isfolder(Runtime.root .. "/TAS FILES") then makefolder(Runtime.root .. "/TAS FILES") end
-
-            local s2, files = pcall(listfiles, Runtime.root .. "/TAS FILES")
-            if s2 and files then
-                for _, path in ipairs(files) do
-                    local name = path:match("([^/\\]+)%.json$") or path:match("([^/\\]+)%.fe2tomatas$")
-                    if name then AddItemToList(LocalList, LocalLayout, name) end
-                end
-            else
-                AddItemToList(LocalList, LocalLayout, "Folder empty or read error.")
-            end
-        else
-            AddItemToList(LocalList, LocalLayout, "Executor doesn't support listfiles.")
-        end
-    end
-
-    -- Import Section
-    local ImportFrame = Instance.new("Frame", MainFrame)
-    ImportFrame.Size = UDim2.new(1, -20, 0, 85)
-    ImportFrame.Position = UDim2.new(0, 10, 1, -95)
-    ImportFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    Instance.new("UICorner", ImportFrame).CornerRadius = UDim.new(0, 6)
-
-    -- Row 1: Single Import
-    local URLBox = Instance.new("TextBox", ImportFrame)
-    URLBox.Size = UDim2.new(0.5, -10, 0, 30)
-    URLBox.Position = UDim2.new(0, 5, 0, 10)
-    URLBox.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-    URLBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    URLBox.PlaceholderText = "Raw JSON or FE2T URL..."
-    URLBox.Text = ""
-    URLBox.Font = Enum.Font.Gotham
-    URLBox.TextSize = 12
-    URLBox.TextWrapped = true
-    Instance.new("UICorner", URLBox).CornerRadius = UDim.new(0, 4)
-
-    local NameBox = Instance.new("TextBox", ImportFrame)
-    NameBox.Size = UDim2.new(0.25, -10, 0, 30)
-    NameBox.Position = UDim2.new(0.5, 0, 0, 10)
-    NameBox.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-    NameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    NameBox.PlaceholderText = "Map Name..."
-    NameBox.Text = ""
-    NameBox.Font = Enum.Font.Gotham
-    NameBox.TextSize = 12
-    Instance.new("UICorner", NameBox).CornerRadius = UDim.new(0, 4)
-
-    local ImportBtn = Instance.new("TextButton", ImportFrame)
-    ImportBtn.Size = UDim2.new(0.25, -10, 0, 30)
-    ImportBtn.Position = UDim2.new(0.75, 5, 0, 10)
-    ImportBtn.BackgroundColor3 = COLORS.Info
-    ImportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ImportBtn.Text = "Import Link"
-    ImportBtn.Font = Enum.Font.GothamBold
-    ImportBtn.TextSize = 12
-    Instance.new("UICorner", ImportBtn).CornerRadius = UDim.new(0, 4)
-
-    -- Row 2: Mass Download
-    local DownloadAllBtn = Instance.new("TextButton", ImportFrame)
-    DownloadAllBtn.Size = UDim2.new(1, -10, 0, 30)
-    DownloadAllBtn.Position = UDim2.new(0, 5, 0, 45)
-    DownloadAllBtn.BackgroundColor3 = Color3.fromRGB(30, 140, 60)
-    DownloadAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    DownloadAllBtn.Text = "Refresh Bundled TAS Files"
-    DownloadAllBtn.Font = Enum.Font.GothamBold
-    DownloadAllBtn.TextSize = 12
-    Instance.new("UICorner", DownloadAllBtn).CornerRadius = UDim.new(0, 4)
-
-    -- Fetch Data & Cache
-    local OnlineFilesCache = {}
-
-    task.spawn(function()
-        AddItemToList(OnlineList, OnlineLayout, "Reading bundled catalog...")
-        local s, r = pcall(Runtime.read, "tas-catalog.json")
-        for _, v in ipairs(OnlineList:GetChildren()) do if v:IsA("TextLabel") then v:Destroy() end end
-
-        if s and r then
-            local successDec, data = pcall(function() return HttpService:JSONDecode(r) end)
-            if successDec and type(data) == "table" then
-                OnlineFilesCache = data
-                for _, file in ipairs(data) do
-                    if file.name and file.name:match("%.json$") then
-                        AddItemToList(OnlineList, OnlineLayout, file.name:gsub("%.json$", ""))
-                    end
-                end
-            else
-                AddItemToList(OnlineList, OnlineLayout, "Error decoding bundled catalog.")
-            end
-        else
-            AddItemToList(OnlineList, OnlineLayout, "Bundled catalog could not be read.")
-        end
-
-        RefreshLocalList()
-    end)
-
-    -- Single Import Logic
-    ImportBtn.MouseButton1Click:Connect(function()
-        if not getgenv().writefile then
-            ImportBtn.Text = "Not Supported"
-            task.wait(1); ImportBtn.Text = "Import Link"
-            return
-        end
-
-        local url = URLBox.Text
-        local mapName = NameBox.Text
-        if url == "" or mapName == "" then return end
-
-        ImportBtn.Text = "Downloading..."
-        local s, r = pcall(game.HttpGet, game, url)
-        if s and r and #r > 10 then
-            local imported, reason = pcall(function()
-                local frames, metadata = Recordings.codec.decode(r)
-                metadata.mapName = mapName
-                return Recordings.save(mapName, frames, metadata)
-            end)
-            ImportBtn.Text = imported and "Saved binary!" or "Invalid recording"
-            if imported then RefreshLocalList() else Alert(tostring(reason), "Error") end
-        else
-            ImportBtn.Text = "Failed!"
-        end
-        task.wait(2); ImportBtn.Text = "Import Link"
-    end)
-
-    -- Recordings ship with the project; refresh without overwriting edited runs.
-    DownloadAllBtn.MouseButton1Click:Connect(function()
-        RefreshLocalList()
-        DownloadAllBtn.Text = "Local files refreshed"
-        task.wait(2)
-        DownloadAllBtn.Text = "Refresh Bundled TAS Files"
-    end)
-end
 
 -- ==============================================================================
 -- [6] AUTO FARM ENGINE (UPDATED MECHANICS)
@@ -808,7 +552,7 @@ task.spawn(function()
     while task.wait(1) do
         if Session.Cancelled then break end
         Advanced.tick()
-        if (State.AutoFarm or State.AutoPlay or State.SelectTASMaps) and not State.CurrentlyFarming and not (State.PracticeMap and State.PracticeMap.Parent) then
+        if State.AutoJoinLift and (State.AutoFarm or State.AutoPlay or State.SelectTASMaps) and not State.CurrentlyFarming and not (State.PracticeMap and State.PracticeMap.Parent) then
             if not Check("InLift") and not Check("InGame") then
                 AddedWaiting:FireServer()
             end
@@ -823,7 +567,7 @@ task.spawn(function()
         if Session.Cancelled then break end
         if State.AutoRebirth then
             local now = os.time()
-            if now - lastRebirthAttempt >= 60 then
+            if now - lastRebirthAttempt >= State.RebirthInterval then
                 local key = GetSessionKey()
                 if key then
                     pcall(function()
@@ -846,7 +590,7 @@ TrackConnection(RunService.Heartbeat:Connect(function()
         -- [FIX APPLIED HERE]
         -- 1. `not getgenv().IsTASPlaying`: Completely stops the GUI from messing with movement if TAS is active.
         -- 2. `hum.WalkSpeed > 0`: Allows the GUI to respect the Map's 0 WalkSpeed cooldown.
-        if not getgenv().IsTASPlaying and not getgenv().TAS_Active and hum.WalkSpeed > 0 then
+        if State.MovementOverrides and not getgenv().IsTASPlaying and not getgenv().TAS_Active and hum.WalkSpeed > 0 then
             if hum.WalkSpeed ~= State.WalkSpeed then hum.WalkSpeed = State.WalkSpeed end
             if hum.JumpPower ~= State.JumpPower then hum.JumpPower = State.JumpPower end
         end
@@ -858,17 +602,14 @@ TrackConnection(RunService.Heartbeat:Connect(function()
     end
 end))
 
--- Input Handlers (Spacebar Jump Logic)
-TrackConnection(UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-
-    if State.AirJump and (input.KeyCode == Enum.KeyCode.ButtonA or input.KeyCode == Enum.KeyCode.Space) then
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hum and hrp and hum:GetState() == Enum.HumanoidStateType.Freefall then
-            hrp.Velocity = Vector3.new(hrp.Velocity.X, State.JumpPower * 0.8, hrp.Velocity.Z)
-        end
+-- Air jump uses Roblox's keyboard, controller, and touch jump request.
+TrackConnection(UserInputService.JumpRequest:Connect(function()
+    if not State.AirJump or getgenv().IsTASPlaying or getgenv().TAS_Active then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if hum and root and hum:GetState() == Enum.HumanoidStateType.Freefall then
+        root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, State.JumpPower * 0.8, root.AssemblyLinearVelocity.Z)
     end
 end))
 
@@ -883,6 +624,7 @@ end))
 
 -- Anti-AFK
 TrackConnection(LocalPlayer.Idled:Connect(function()
+    if not State.AntiAFK then return end
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end))
@@ -899,7 +641,7 @@ TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
 end))
 
 -- Hook Swim Mode
-if getgenv().hookmetamethod then
+if type(hookmetamethod) == "function" and type(checkcaller) == "function" then
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, index)
         if not Session.Cancelled and State.SwimEnabled and index == "Position" and tostring(self) == "HumanoidRootPart" and not checkcaller() then
@@ -910,202 +652,33 @@ if getgenv().hookmetamethod then
 end
 
 -- ==============================================================================
--- [9] USER INTERFACE (KAVO)
+-- [9] AIRFLOW USER INTERFACE
 -- ==============================================================================
-
-local function InitializeUI()
-    local Kavo = Runtime.run(CONFIG.UI_LIBRARY_PATH)
-    local Window = Kavo.CreateLib("FloodGUI", KAVO_THEME)
-
-    -- === 1. TAS TAB ===
-    local tasTab = Window:NewTab("TAS")
-
-    local stealthSec = tasTab:NewSection("Auto-Play (Stealth Farm)")
-    stealthSec:NewToggle("Enable Auto-Play", "Automatically plays local TAS files.", function(state)
-        State.AutoPlay = state
-        Alert("Auto-Play (Stealth) " .. (state and "Enabled" or "Disabled"), state and "Success" or "Error")
-    end)
-
-    stealthSec:NewToggle("Fallback to Blatant Farm", "[NOT RECOMMENDED] Farm manually if TAS is missing.", function(state)
-        State.FallbackToFarm = state
-        Alert("TAS Fallback " .. (state and "Enabled" or "Disabled"), "Warning")
-    end)
-
-    local tasSec = tasTab:NewSection("TAS Manager & Sniping")
-    tasSec:NewButton("TAS File Manager", "View bundled/local recordings and import a URL.", function()
-        OpenTASFileManager()
-    end)
-
-    tasSec:NewDropdown("Operation Mode", "What to do on target maps.", {"Farm", "Play", "Record"}, function(current)
-        State.Mode = current
-        Alert("Mode set to: " .. current, "Info")
-    end)
-
-    tasSec:NewToggle("Enable TAS map selection", "Vote for maps matching the selected mode.", function(value) State.SelectTASMaps = value end)
-    tasSec:NewToggle("Prefer maps missing TAS", "Prioritize unrecorded maps when eligible.", function(value) State.PreferMissingTAS = value end)
-
-    tasSec:NewTextBox("Target Map Snipe", "Exact Name (e.g. Sandswept Ruins)", function(txt)
-        State.TargetMapName = txt
-        Alert("Target map set to: " .. txt, "System")
-    end)
-
-    tasSec:NewKeybind("Toggle Swim Mode [TAS]", "Simulate water state for TAS.", Enum.KeyCode.Y, function()
-        State.SwimEnabled = not State.SwimEnabled
-        Alert("TAS Swim Mode " .. (State.SwimEnabled and "Enabled" or "Disabled"), "Info")
-    end)
-
-    tasSec:NewButton("Force Load TAS Player", "Manually inject TAS Player (If joined late).", function()
-        ExecuteSecondaryScript("Play")
-    end)
-
-    tasSec:NewButton("Create TAS", "Launch TAS Creator script immediately.", function()
-        ExecuteSecondaryScript("Record")
-    end)
-
-    tasSec:NewButton("Load Infinite Yield", "Loads Infinite Yield Admin Script", function()
-        LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source")
-        Alert("Infinite Yield Loaded.", "Info")
-    end)
-
-    -- === 2. AUTO FARM TAB (BLATANT) ===
-    local autoTab = Window:NewTab("Auto Farm")
-    local mainSec = autoTab:NewSection("Blatant Auto Farm Options")
-
-    mainSec:NewToggle("Enable Auto-Farm", "Instantly teleports to hitboxes to win.", function(state)
-        State.PracticeMap = nil
-        State.AutoFarm = state
-        getgenv().TomatoAutoFarm = state
-        Alert("Blatant Auto Farm " .. (state and "Enabled" or "Disabled"), state and "Success" or "Error")
-    end)
-
-    mainSec:NewToggle("Play after buttons", "Return to spawn after buttons; finish manually.", function(value) State.PlayAfterButtons = value end)
-    mainSec:NewSlider("Farm start delay", "Wait before navigating (seconds).", 30, 0, function(value) State.StartDelay = value end)
-    mainSec:NewToggle("Reset after escape", "Reset only after an escape confirmation.", function(value) State.ResetAfterEscape = value end)
-    mainSec:NewSlider("Reset delay", "Wait after confirmed escape (seconds).", 10, 0, function(value) State.ResetDelay = value end)
-
-    local advancedSec = autoTab:NewSection("Optional Quickfarm Features")
-    if not advancedOK then advancedSec:NewLabel("DISABLED: advanced module failed to initialize") end
-    for _, name in ipairs({"Fast load", "Forced win", "Direct buttons", "Auto boost", "Manual boost", "Smart challenges", "Timed challenges"}) do
-        local feature = Advanced.guard.features[name]
-        if feature then
-            if not feature.available then
-                advancedSec:NewLabel("DISABLED: " .. name .. " — " .. tostring(feature.reason))
-            else
-                local label = advancedSec:NewLabel(name .. ": available, OFF")
-                feature.changed = function(f)
-                    if label and type(label.UpdateLabel) == "function" then
-                        label:UpdateLabel(f.available and (name .. (f.enabled and ": ON" or ": OFF")) or ("DISABLED: " .. name .. " — " .. f.reason))
-                    end
-                end
-                if name == "Manual boost" then
-                    advancedSec:NewButton("Full boost (20 gems expected)", "Send four boost requests; spends gems.", Advanced.manualBoost)
-                else
-                    local description = "Optional; automatically disabled if its checks fail."
-                    if name == "Auto boost" then description = "Spends approximately 20 gems each new round." end
-                    if name == "Smart challenges" then description = "Costs coins. Uses description heuristics, not guaranteed impossibility." end
-                    if name == "Timed challenges" then description = "Cycles challenges every 10 minutes; may spend coins." end
-                    advancedSec:NewToggle(name, description, function(value) Advanced.enable(name, value) end)
-                end
-            end
-        end
-    end
-
-    mainSec:NewToggle("Auto Collect (Page-Escapee)", "Collects LostPage and Escapee automatically.", function(state)
-        State.AutoCollect = state
-        Alert("Auto Collect " .. (state and "Enabled" or "Disabled"), "Info")
-    end)
-
-    mainSec:NewToggle("Auto Rebirth", "Automatically attempts to rebirth every 60 seconds.", function(state)
-        State.AutoRebirth = state
-        Alert("Auto Rebirth " .. (state and "Enabled" or "Disabled"), state and "Success" or "Error")
-    end)
-
-    mainSec:NewDropdown("Max Difficulty Level", "Skip maps harder than this.", {"None", "Crazy+", "Crazy", "Insane", "Hard", "Normal", "Easy"}, function(current)
-        State.TargetDifficulty = current
-        Alert("Max Difficulty set to: " .. current, "System")
-    end)
-
-    mainSec:NewToggle("Enforce Difficulty Limiter", "Suicides to skip if map is too hard.", function(state)
-        State.EnforceDifficulty = state
-        Alert("Difficulty Limiter " .. (state and "Enabled" or "Disabled"), "Info")
-    end)
-
-    -- === 3. LOCAL PLAYER TAB ===
-    local charTab = Window:NewTab("Local Player")
-    local moveSec = charTab:NewSection("Movement Settings")
-
-    moveSec:NewSlider("WalkSpeed", "Changes player speed.", 100, 20, function(s)
-        State.WalkSpeed = math.max(1, s)
-    end)
-
-    moveSec:NewSlider("JumpPower", "Changes jump height.", 200, 50, function(s)
-        State.JumpPower = math.max(0, s)
-    end)
-
-    -- === 4. BLATANT TAB ===
-    local blatantTab = Window:NewTab("Blatant")
-    local exploitSec = blatantTab:NewSection("Exploits")
-
-    exploitSec:NewKeybind("Infinite Air / GodMode", "Prevents drowning / God Mode.", Enum.KeyCode.R, function()
-        State.GodMode = not State.GodMode
-        Alert("Infinite Air " .. (State.GodMode and "Enabled" or "Disabled"), State.GodMode and "Success" or "Error")
-    end)
-
-    exploitSec:NewKeybind("Noclip", "Allows walking through walls.", Enum.KeyCode.G, function()
-        State.Noclip = not State.Noclip
-        Noclip(State.Noclip)
-        Alert("Noclip " .. (State.Noclip and "Enabled" or "Disabled"), State.Noclip and "Success" or "Error")
-    end)
-
-    exploitSec:NewKeybind("Air Jump", "Allows jumping while mid-air.", Enum.KeyCode.M, function()
-        State.AirJump = not State.AirJump
-        Alert("Air Jump " .. (State.AirJump and "Enabled" or "Disabled"), State.AirJump and "Success" or "Error")
-    end)
-
-    -- === 5. OTHER TAB ===
-    local miscTab = Window:NewTab("Other")
-    local utilSec = miscTab:NewSection("Utilities")
-    utilSec:NewToggle("Game alerts", "Show status messages in the game alert feed.", function(value) State.AlertsEnabled = value end)
-    utilSec:NewButton("Stop automation", "Stop farming, playback and optional quickfarm actions.", function()
-        State.AutoFarm, State.AutoPlay, State.SelectTASMaps, State.AutoCollect, State.AutoRebirth = false, false, false, false, false
-        getgenv().TomatoAutoFarm = false
-        if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
-        Advanced.cleanup()
-        Alert("Automation stopped.", "Info")
-    end)
-
-    utilSec:NewKeybind("Toggle UI", "Toggles the GUI visibility.", Enum.KeyCode.J, function()
-        State.UIEnabled = not State.UIEnabled
-        Kavo:ToggleUI()
-        Alert("UI " .. (State.UIEnabled and "Enabled" or "Disabled"), "Info")
-    end)
-
-    utilSec:NewToggle("Auto-Leave", "Automatically leaves if another player joins.", function(state)
-        State.AutoLeave = state
-        Alert("Auto-Leave " .. (state and "Enabled" or "Disabled"), "Info")
-    end)
-
-    utilSec:NewButton("Rejoin Server", "Teleports you to a new server of the same game.", function()
-        Alert("Attempting to rejoin...", "Info")
-        pcall(TeleportService.Teleport, TeleportService, game.PlaceId, LocalPlayer)
-    end)
-
-    -- === 6. CREDITS TAB ===
-    local credTab = Window:NewTab("Credits")
-    local credSec = credTab:NewSection("Credits & Info")
-    credSec:NewLabel("TAS System: Tomato (Base by Voiz#5668)")
-    credSec:NewLabel("Reverse Engineering/Base GUI: Tomato")
-    credSec:NewLabel("UI Library: xHeptc (Kavo)")
-
-    credSec:NewButton("Copy Support Server Invite", "Copies Discord invite.", function()
-        if setclipboard then
-            pcall(setclipboard, CONFIG.DISCORD_INVITE)
-            Alert("Discord invite copied to clipboard!", "Success")
-        else
-            Alert("Clipboard access not supported by your exploit.", "Warning")
-        end
-    end)
+UI = Runtime.run("ui/service.luau")
+local function StopAutomation()
+    State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
+    State.AutoCollect, State.AutoRebirth = false, false
+    getgenv().TomatoAutoFarm = false
+    if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
+    Advanced.cleanup()
+    Alert("Automation stopped.", "Info")
 end
-
-InitializeUI()
-Alert("FloodGUI Loaded Successfully!", "Rainbow")
+local previousCleanup = Session.Cleanup
+Session.Cleanup = function()
+    if previousCleanup then previousCleanup() end
+    if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
+    UI.destroy()
+end
+local Interface = Runtime.run("ui/main.luau")({
+    runtime=Runtime, ui=UI, state=State, advanced=Advanced, recordings=Recordings, session=Session,
+    noclip=Noclip, alert=Alert, execute=ExecuteSecondaryScript, stop=StopAutomation,
+    swimAvailable=type(hookmetamethod)=="function" and type(checkcaller)=="function",
+    rejoin=function() TeleportService:Teleport(game.PlaceId,LocalPlayer) end,
+    infiniteYield=function() LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source") end,
+    copyInvite=function()
+        if type(setclipboard)=="function" then setclipboard(CONFIG.DISCORD_INVITE); Alert("Support invite copied.","Success")
+        else Alert(CONFIG.DISCORD_INVITE,"Info") end
+    end,
+})
+getgenv().FloodGUIInterface = Interface
+Alert("FloodGUI is ready.", "Success")
