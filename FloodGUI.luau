@@ -667,6 +667,7 @@ local previousCleanup = Session.Cleanup
 Session.Cleanup = function()
     if previousCleanup then previousCleanup() end
     if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
+    if getgenv().TAS_Active and getgenv().FloodGUIStopCreator then pcall(getgenv().FloodGUIStopCreator) end
     UI.destroy()
 end
 local Interface = Runtime.run("ui/main.luau")({

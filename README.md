@@ -22,18 +22,22 @@ These scripts require Roblox and executor APIs including local file access and l
 
 ## Features
 
-- Unified interface, independent collection, movement tools, map selection and difficulty controls.
+- Airflow menus throughout, with a tomato-red and black theme, Lucide icons, and ValleySans with a BuilderSans fallback.
+- Organized Overview, Farming, Maps, TAS, Recordings, Movement, Advanced, Settings, and About tabs.
+- Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.
-- Automatic playback of the 178 bundled legacy JSON recordings and new binary recordings.
+- Automatic playback of the 177 bundled legacy JSON recordings and new binary recordings.
 - JSON/binary conversion API and creator conversion/export controls.
 - Manual play after buttons, farm/reset delays, and a stop-automation control.
+- Live playback speed, pause, progress, and hold controls; creator visualization toggles, editable shortcuts, and automatic-save settings.
+- Adjustable rebirth/challenge intervals, lift rejoining, idle prevention, notifications, and interface scale.
 - Optional fast load, direct buttons, forced win, boosts and challenge cycling. New options start off. Unavailable integrations are marked disabled; detected errors are isolated by feature.
 
 The forced-win option stays disabled when its escape lock cannot be identified safely. Spending options state their expected costs; estimates are inherited from the source scripts. Community Maps and standalone animation/zipline replacements remain separate.
 
 ## Upload
 
-Upload the **contents of this folder** to the repository root, not inside another FloodGUI folder. The code must be on `live`, with `loader.lua`, `runtime.luau`, `FloodGUI.luau`, `TAS/`, `TAS FILES/` and `vendor/` at the root.
+Upload the **contents of this folder** to the repository root, not inside another FloodGUI folder. The code must be on `live`, with `loader.lua`, `runtime.luau`, `FloodGUI.luau`, `ui/`, `TAS/`, `TAS FILES/` and `vendor/` at the root. Use this working folder for the latest changes; the older ZIP is not being updated.
 
 For a fresh extraction of the upload ZIP:
 
@@ -51,7 +55,7 @@ The prepared local repository already has a committed release on branch `live` a
 
 `FloodGUI.luau` is the main app. `TAS/CREATOR/` and `TAS/PLAYER/` contain the integrated engines. `TAS/codec.luau` and `TAS/recordings.luau` define the translation and file APIs.
 
-`vendor/airflow.luau` is an optional mobile-hardened UI library. It loads its Lucide icon pack and optional custom fonts on demand, with built-in-symbol and BuilderSans fallbacks if they are unavailable. FloodGUI continues to use its established UI while the alternate interface is tested in Roblox.
+`ui/` contains FloodGUI's Airflow interfaces: `main.luau`, `creator.luau`, `player.luau`, and the integrated `recordings.luau` browser. `service.luau` shares the theme, font loading, and window lifecycle. `vendor/airflow.luau` is the UI dependency used by all of them. Main menu: J; creator: F6; creator hold controls: F7; player: F5. Floating buttons reopen hidden windows on touch devices too.
 
 With Node.js and the official Luau CLI installed:
 

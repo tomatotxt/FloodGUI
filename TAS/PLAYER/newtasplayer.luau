@@ -4,11 +4,13 @@ if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) 
 local INPUT = Runtime.run("vendor/input.luau")
 
 local UserInputService = game:GetService("UserInputService")
-local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local UI = Runtime.run("ui/service.luau")
+local sharedState = getgenv().State and getgenv().State() or {}
+local PlayerUI
 
-local TimeModifier = 1 -- [CONTROL SPEED HERE] (1 = Normal, 0.5 = 2x Speed, 2 = Slow Motion)
+local TimeModifier = 1 / (sharedState.PlaybackSpeed or 1)
 local DynamicTimeScale = 1 -- [MAP EVENT MODIFIER] Dynamically scales speed mid-game
-local SwimSmoothness = 0.04 -- [SWIMMING ROTATION SMOOTHING] Lower = Smoother, Higher = Snappier (0.01 - 0.1 recommended)
+local SwimSmoothness = sharedState.SwimSmoothness or 0.04
 
 print("FloodGUI TAS Player - Auto-Queue Active")
 
@@ -66,6 +68,7 @@ local function Log(msg, category)
     local color = Theme[category] or Theme.Info
     local text = "[TAS] " .. msg
     print(text)
+    UI.notify(text, category)
     if CLMAIN and type(CLMAIN.newAlert) == "function" then
         CLMAIN.newAlert(text, color)
     end
@@ -105,14 +108,14 @@ task.spawn(function()
 end)
 
 if not getgenv().alreadystarted then
-    Log("Welcome to the TAS Engine! (v65)", "System")
+    Log("Welcome to the TAS Engine!", "System")
     task.wait(0.1)
     Log("TAS Engine initialized.", "System")
     task.wait(0.1)
     Log("Current speed set to: " .. TimeModifier .. "x", "Highlight")
     getgenv().alreadystarted = true
 else
-    Log("TAS Engine reloaded! (v65)", "System")
+    Log("TAS Engine reloaded!", "System")
     task.wait(0.15)
     Log("Current speed set to: " .. TimeModifier .. "x", "Highlight")
 end
@@ -237,6 +240,7 @@ local function Cleanup(resetCharacter)
     if CleanedUp then return end
     CleanedUp = true
     INPUT:Destroy()
+    if PlayerUI then PlayerUI.Destroy(); PlayerUI = nil end
     getgenv().IsTASPlaying = false
 
     -- Reset state variables on cleanup
@@ -247,12 +251,7 @@ local function Cleanup(resetCharacter)
     IsManualZipline = false
     IsManualSlide = false
 
-    -- Clean up GUI
-    local playerGui = LP:FindFirstChild("PlayerGui")
-    if playerGui then
-        local oldGui = playerGui:FindFirstChild("TAS_GUI")
-        if oldGui then oldGui:Destroy() end
-    end
+
 
     if getgenv().TASConnections then
         for _, connection in pairs(getgenv().TASConnections) do
@@ -599,202 +598,58 @@ if downKey and downKey.Pressed then
     end))
 end
 
--- MANUAL HOLD CONTROL: Key Z (Zipline / Swing)
-local zKey = INPUT["Z"]
+local function SetManualZipline(value)
+    IsManualZipline, IsCurrentlyZiplining = value, value
+    if value then toggleSlide(false); IsSliding = false; IsManualSlide = false end
+    LastPlayedAnim = nil
+end
+local function SetManualSlide(value)
+    IsManualSlide, IsSliding = value, value
+    if value then IsManualZipline, IsCurrentlyZiplining = false, false end
+    toggleSlide(value)
+    LastPlayedAnim = nil
+end
+local zKey, sKey = INPUT["Z"], INPUT["S"]
 if zKey then
-    AddConnection(zKey.Pressed:Connect(function()
-        IsManualZipline = true
-        IsCurrentlyZiplining = true
-        toggleSlide(false)
-        IsSliding = false
-        LastPlayedAnim = nil -- Instantly triggers swing animation
-    end))
-    AddConnection(zKey.Released:Connect(function()
-        IsManualZipline = false
-        IsCurrentlyZiplining = false
-        LastPlayedAnim = nil
-    end))
+    AddConnection(zKey.Pressed:Connect(function() SetManualZipline(true) end))
+    AddConnection(zKey.Released:Connect(function() SetManualZipline(false) end))
 end
-
--- MANUAL HOLD CONTROL: Key S (Slide)
-local sKey = INPUT["S"]
 if sKey then
-    AddConnection(sKey.Pressed:Connect(function()
-        IsManualSlide = true
-        toggleSlide(true)
-        IsSliding = true
-        LastPlayedAnim = nil
-    end))
-    AddConnection(sKey.Released:Connect(function()
-        IsManualSlide = false
-        toggleSlide(false)
-        IsSliding = false
-        LastPlayedAnim = nil
-    end))
+    AddConnection(sKey.Pressed:Connect(function() SetManualSlide(true) end))
+    AddConnection(sKey.Released:Connect(function() SetManualSlide(false) end))
 end
+AddConnection(UserInputService.WindowFocusReleased:Connect(function() SetManualZipline(false); SetManualSlide(false) end))
+local PausePending = false
 
-local function TriggerPauseToggle()
+local function TriggerPauseToggle(requested)
+    if PausePending or CleanedUp then return end
+    local desired = requested
+    if desired == nil then desired = not PAUSED end
+    if desired == PAUSED then return end
+    PausePending = true
     task.spawn(function()
-        repeat task.wait() until Humanoid and Humanoid.FloorMaterial ~= Enum.Material.Air
-        PAUSED = not PAUSED
+        while not CleanedUp and desired and Humanoid and Humanoid.Parent and Humanoid.FloorMaterial == Enum.Material.Air do task.wait() end
+        PausePending = false
+        if CleanedUp or not Humanoid or not Humanoid.Parent then return end
+        PAUSED = desired
         if PAUSED then
             pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
             LastPlayedAnim = "idle"
-            Log("TAS Paused (Grounded)", "Warning")
-        else
-            LastClock = os.clock()
-            Log("TAS Resumed", "Success")
-        end
+            Log("TAS paused", "Warning")
+        else LastClock = os.clock(); Log("TAS resumed", "Success") end
     end)
 end
+AddConnection(INPUT["P"].Pressed:Connect(function() TriggerPauseToggle() end))
+PlayerUI = Runtime.run("ui/player.luau")({
+    mapName=realMapName, smoothness=SwimSmoothness, track=AddConnection, pause=TriggerPauseToggle,
+    zipline=SetManualZipline, slide=SetManualSlide,
+    setSpeed=function(multiplier) TimeModifier = 1 / math.clamp(multiplier,0.1,20) end,
+    setSmoothness=function(value) SwimSmoothness=value end,
+    stop=function() sharedState.AutoPlay=false; Cleanup(false) end,
+    status=function() return {finished=CleanedUp, elapsed=VisualElapsed, duration=TAS[#TAS].time,
+        paused=PAUSED, pausePending=PausePending, speed=1/TimeModifier, effectiveSpeed=1/(TimeModifier*DynamicTimeScale)} end,
+})
 
-local function HandlePause()
-    TriggerPauseToggle()
-    INPUT["P"].Pressed:Once(HandlePause)
-end
-INPUT["P"].Pressed:Once(HandlePause)
-
--- // DYNAMIC GUI (MOBILE TOUCH CONTROLS & PC KEYBIND GUIDE) //
-local function SetupGUI()
-    local PlayerGui = LP:WaitForChild("PlayerGui", 10)
-    if not PlayerGui then return end
-
-    local oldGui = PlayerGui:FindFirstChild("TAS_GUI")
-    if oldGui then oldGui:Destroy() end
-
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "TAS_GUI"
-    ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = PlayerGui
-
-    if IsMobile then
-        -- MOBILE CONTROLS FRAME
-        local MobileFrame = Instance.new("Frame")
-        MobileFrame.Name = "MobileControls"
-        MobileFrame.Size = UDim2.new(0, 160, 0, 160)
-        MobileFrame.Position = UDim2.new(0.02, 0, 0.35, 0)
-        MobileFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-        MobileFrame.BackgroundTransparency = 0.35
-        MobileFrame.BorderSizePixel = 0
-        MobileFrame.Parent = ScreenGui
-
-        local UICorner = Instance.new("UICorner", MobileFrame)
-        UICorner.CornerRadius = UDim.new(0, 10)
-
-        local UIListLayout = Instance.new("UIListLayout", MobileFrame)
-        UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        UIListLayout.Padding = UDim.new(0, 8)
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-
-        local function CreateMobileButton(name, text, color)
-            local btn = Instance.new("TextButton")
-            btn.Name = name
-            btn.Size = UDim2.new(0.88, 0, 0, 40)
-            btn.BackgroundColor3 = color
-            btn.Text = text
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.Font = Enum.Font.SourceSansBold
-            btn.TextSize = 15
-            btn.AutoButtonColor = true
-            btn.Parent = MobileFrame
-
-            local btnCorner = Instance.new("UICorner", btn)
-            btnCorner.CornerRadius = UDim.new(0, 8)
-            return btn
-        end
-
-        local pauseBtn = CreateMobileButton("PauseBtn", "Pause / Resume", Color3.fromRGB(210, 130, 30))
-        local ziplineBtn = CreateMobileButton("ZiplineBtn", "Hold: Zipline", Color3.fromRGB(0, 150, 220))
-        local slideBtn = CreateMobileButton("SlideBtn", "Hold: Slide", Color3.fromRGB(60, 170, 90))
-
-        -- Pause Button Trigger
-        pauseBtn.MouseButton1Click:Connect(function()
-            TriggerPauseToggle()
-        end)
-
-        -- Zipline Button Touch Events
-        ziplineBtn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                IsManualZipline = true
-                IsCurrentlyZiplining = true
-                toggleSlide(false)
-                IsSliding = false
-                LastPlayedAnim = nil
-                ziplineBtn.BackgroundColor3 = Color3.fromRGB(0, 210, 255)
-            end
-        end)
-        ziplineBtn.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                IsManualZipline = false
-                IsCurrentlyZiplining = false
-                LastPlayedAnim = nil
-                ziplineBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 220)
-            end
-        end)
-
-        -- Slide Button Touch Events
-        slideBtn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                IsManualSlide = true
-                toggleSlide(true)
-                IsSliding = true
-                LastPlayedAnim = nil
-                slideBtn.BackgroundColor3 = Color3.fromRGB(90, 220, 110)
-            end
-        end)
-        slideBtn.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                IsManualSlide = false
-                toggleSlide(false)
-                IsSliding = false
-                LastPlayedAnim = nil
-                slideBtn.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
-            end
-        end)
-    else
-        -- PC KEYBIND GUIDE FRAME
-        local GuideFrame = Instance.new("Frame")
-        GuideFrame.Name = "PCGuide"
-        GuideFrame.Size = UDim2.new(0, 220, 0, 150)
-        GuideFrame.Position = UDim2.new(0.015, 0, 0.35, 0)
-        GuideFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-        GuideFrame.BackgroundTransparency = 0.25
-        GuideFrame.BorderSizePixel = 0
-        GuideFrame.Parent = ScreenGui
-
-        local UICorner = Instance.new("UICorner", GuideFrame)
-        UICorner.CornerRadius = UDim.new(0, 8)
-
-        local Title = Instance.new("TextLabel")
-        Title.Size = UDim2.new(1, 0, 0, 28)
-        Title.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
-        Title.BackgroundTransparency = 0.2
-        Title.Text = "  TAS Keybind Controls"
-        Title.TextColor3 = Color3.fromRGB(0, 200, 255)
-        Title.Font = Enum.Font.SourceSansBold
-        Title.TextSize = 15
-        Title.TextXAlignment = Enum.TextXAlignment.Left
-        Title.Parent = GuideFrame
-
-        local TitleCorner = Instance.new("UICorner", Title)
-        TitleCorner.CornerRadius = UDim.new(0, 8)
-
-        local GuideText = Instance.new("TextLabel")
-        GuideText.Size = UDim2.new(0.9, 0, 0.75, 0)
-        GuideText.Position = UDim2.new(0.05, 0, 0.23, 0)
-        GuideText.BackgroundTransparency = 1
-        GuideText.Text = "[P] - Pause / Resume (Grounded)\n[Up Arrow] - Speed Up (+0.05)\n[Down Arrow] - Speed Down (-0.05)\n[Z] (Hold) - Force Zipline / Swing\n[S] (Hold) - Force Slide"
-        GuideText.TextColor3 = Color3.fromRGB(220, 220, 220)
-        GuideText.Font = Enum.Font.SourceSans
-        GuideText.TextSize = 14
-        GuideText.TextYAlignment = Enum.TextYAlignment.Top
-        GuideText.TextXAlignment = Enum.TextXAlignment.Left
-        GuideText.Parent = GuideFrame
-    end
-end
-
-SetupGUI()
 
 local MainLoop
 MainLoop = RS.Heartbeat:Connect(function()

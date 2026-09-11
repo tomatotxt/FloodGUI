@@ -2,7 +2,7 @@ local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader
 getgenv().TAS_Active = true
 
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
-local UI_API_PATH = "TAS/CREATOR/uiapi.luau"
+local UI_API_PATH = "ui/creator.luau"
 
 print("TAS Creator: Ultimate Edition Loaded")
 
@@ -12,7 +12,8 @@ getgenv().TargetSmoothingFPS = 24
 getgenv().ShowTASPathDuringPlayback = false
 getgenv().PlaybackCamera = false
 getgenv().ShowVelocityPredictor = false
-getgenv().EnableAutoSwim = true -- Added default configuration
+getgenv().EnableAutoSwim = true
+getgenv().AutoSaveOnExit = true
 
 local Keybinds = {
     AddSavestate = "One",
@@ -299,39 +300,34 @@ local function SaveRecording(name, frames)
 end
 
 local function RefreshFileList()
-    if not UI_Elements or not UI_Elements.FileList then return end
-    for _, child in ipairs(UI_Elements.FileList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-    if not listfiles or not isfolder then return end
-    pcall(function()
-        if not isfolder(Runtime.root .. "/TAS FILES") then makefolder(Runtime.root .. "/TAS FILES") end
-        for _, file in ipairs(listfiles(Runtime.root .. "/TAS FILES")) do
-            if file:match("%.json$") or file:match("%.fe2tomatas$") then
-                local filename = file:match("([^/\\]+)$")
-                local btn = Instance.new("TextButton")
-                btn.Size = UDim2.new(1, -10, 0, 30); btn.BackgroundColor3 = Color3.fromRGB(40,40,45)
-                btn.Text = filename; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.Gotham
-                btn.Parent = UI_Elements.FileList
-                btn.Activated:Connect(function()
-                    SelectedFileToLoad = filename
-                    if UI_Elements.SelectedLabel then UI_Elements.SelectedLabel.Text = "Selected: " .. filename end
-                end)
-            end
+    if not UI_Elements then return end
+    local names = {}
+    local ok, message = pcall(function()
+        for _, file in ipairs(listfiles(Runtime.path("TAS FILES"))) do
+            if file:match("%.json$") or file:match("%.fe2tomatas$") then table.insert(names, file:match("([^/\\]+)$")) end
         end
+    end)
+    if not ok then SendAlert("Local file list unavailable: " .. tostring(message), Color3.fromRGB(255,170,0)) end
+    table.sort(names)
+    UI_Elements.SetFiles(names, function(filename)
+        SelectedFileToLoad = filename or ""
+        UI_Elements.SelectedLabel.Text = "Selected: " .. (filename or "None")
     end)
 end
 
 -- // CORE LOGIC / FORWARD DECLARATIONS //
 local TogglePause, AddSavestate, RemoveSavestate, LoadLastSavestate, RewindFrame, StepForward, PlaybackTAS, ResetToNormal, RewindLoop, FrameAdvanceLoop
 local ReleaseTouchControls
+local CreatorActions = {}
 
 -- [[ UI API LOADING & BINDING ]] --
 local function BindUI()
     if not UI_Elements or not UI_Elements.Buttons then return end
     local btns = UI_Elements.Buttons
-    local actions = {}
+    local actions = CreatorActions
     local function BindButton(name, callback)
         actions[name] = callback
-        if btns[name] then AddConnection(btns[name].Activated:Connect(callback)) end
+        UI_Elements.BindAction(name, callback)
     end
 
     -- Controls
@@ -362,48 +358,37 @@ local function BindUI()
                     end
                 end
             end
-            btns.DebugView.Text = "Debug Hitboxes: ON"; btns.DebugView.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
         else
             for part, props in pairs(OriginalVisuals) do if part and part.Parent then part.Color = props.Color; part.Transparency = props.Transparency end end
             OriginalVisuals = setmetatable({}, { __mode = "k" })
-            btns.DebugView.Text = "Debug Hitboxes: OFF"; btns.DebugView.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
         end
     end)
     BindButton("SmoothMode", function()
         getgenv().ExtremeSmoothing = not getgenv().ExtremeSmoothing
-        btns.SmoothMode.Text = "Extreme Smoothing: " .. (getgenv().ExtremeSmoothing and "ON" or "OFF")
-        btns.SmoothMode.BackgroundColor3 = getgenv().ExtremeSmoothing and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
     end)
     BindButton("PathTracing", function()
         getgenv().ShowTASPathDuringPlayback = not getgenv().ShowTASPathDuringPlayback
-        btns.PathTracing.Text = "TAS Path Tracing: " .. (getgenv().ShowTASPathDuringPlayback and "ON" or "OFF")
-        btns.PathTracing.BackgroundColor3 = getgenv().ShowTASPathDuringPlayback and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
     end)
     BindButton("Trajectory", function()
         getgenv().ShowVelocityPredictor = not getgenv().ShowVelocityPredictor
-        btns.Trajectory.Text = "Predictive Velocity: " .. (getgenv().ShowVelocityPredictor and "ON" or "OFF")
-        btns.Trajectory.BackgroundColor3 = getgenv().ShowVelocityPredictor and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
     end)
     BindButton("CamMode", function()
         getgenv().PlaybackCamera = not getgenv().PlaybackCamera
-        btns.CamMode.Text = "Camera Follow: " .. (getgenv().PlaybackCamera and "ON" or "OFF")
-        btns.CamMode.BackgroundColor3 = getgenv().PlaybackCamera and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
     end)
     BindButton("EnvSync", function()
         AutoResetEnv = not AutoResetEnv
-        btns.EnvSync.Text = "Auto-Reset Env: " .. (AutoResetEnv and "ON" or "OFF")
-        btns.EnvSync.BackgroundColor3 = AutoResetEnv and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
     end)
 
     -- Added: Backwards compatible registration for AutoSwim button logic
     if btns.AutoSwim then
         BindButton("AutoSwim", function()
             getgenv().EnableAutoSwim = not getgenv().EnableAutoSwim
-            btns.AutoSwim.Text = "Auto-Swim: " .. (getgenv().EnableAutoSwim and "ON" or "OFF")
-            btns.AutoSwim.BackgroundColor3 = getgenv().EnableAutoSwim and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
             SendAlert("Auto-Swim " .. (getgenv().EnableAutoSwim and "Enabled" or "Disabled"), getgenv().EnableAutoSwim and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0))
         end)
     end
+
+    BindButton("EnvPause", function() EnvPaused = not EnvPaused end)
+    BindButton("AutoSave", function() getgenv().AutoSaveOnExit = not getgenv().AutoSaveOnExit end)
 
     -- Files
     BindButton("SaveRun", function()
@@ -416,7 +401,8 @@ local function BindUI()
     BindButton("RefreshList", RefreshFileList)
     BindButton("LoadRun", function()
         if SelectedFileToLoad == "" then SendAlert("No file selected!", Color3.fromRGB(255,0,0)); return end
-        pcall(function() PlaybackTAS(Recordings.loadFile(SelectedFileToLoad)) end)
+        local ok, message = pcall(function() PlaybackTAS(Recordings.loadFile(SelectedFileToLoad)) end)
+        if not ok then SendAlert(tostring(message), Color3.fromRGB(255,106,96)) end
     end)
     BindButton("ConvertBinary", function()
         if SelectedFileToLoad == "" then return end
@@ -452,10 +438,10 @@ local function BindUI()
     table.insert(padActions, {name = "Visual back", press = function() IsPreviewingBackward = true end,
         release = function() IsPreviewingBackward = false end})
     table.insert(padActions, {name = "Pause map", press = function() EnvPaused = not EnvPaused end})
-    local touch = Runtime.run("TAS/CREATOR/touch-controls.luau")
     local pad
-    pad, ReleaseTouchControls = touch.create(UI_Elements.ScreenGui, padActions, AddConnection)
-    BindButton("TouchControls", function() pad.Visible = not pad.Visible end)
+    pad, ReleaseTouchControls = UI_Elements.CreateTouchControls(padActions, AddConnection)
+    BindButton("TouchControls", function() UI_Elements.PadWindow:Toggle() end)
+    UI_Elements.SetKeybinds(Keybinds)
     RefreshFileList()
 end
 
@@ -631,6 +617,7 @@ end
 
 -- // CLEANUP //
 function ResetToNormal()
+    if not getgenv().TAS_Active then return end
     if ReleaseTouchControls then ReleaseTouchControls() end
     IsRewinding, IsAdvancingFrame, IsPreviewingForward, IsPreviewingBackward, IsViewingTAS = false, false, false, false, false
     getgenv().TAS_Active = false
@@ -687,7 +674,7 @@ function ResetToNormal()
     MapEvents = {}; MapUUIDs = {}; SavedLighting = {Props = {}, Children = {}}; LightingCaptured = false; AutoSaved = false
 
     if ClonedMap then pcall(function() ClonedMap:Destroy() end); ClonedMap = nil end
-    if UI_Elements and UI_Elements.ScreenGui then pcall(function() UI_Elements.ScreenGui:Destroy() end) end
+    if UI_Elements then pcall(UI_Elements.Destroy) end
     UI_Elements = nil
 
     -- Clear physical character state variables through standard reset
@@ -1368,6 +1355,10 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
 
     UpdateMapState(VisualTime); SyncButtonState(VisualTime, RealTime); UpdateTimeDisplay(VisualTime)
 
+    UI_Elements.SyncSettings({DebugView=DebugActive, SmoothMode=getgenv().ExtremeSmoothing,
+        PathTracing=getgenv().ShowTASPathDuringPlayback, Trajectory=getgenv().ShowVelocityPredictor,
+        CamMode=getgenv().PlaybackCamera, EnvSync=AutoResetEnv, AutoSwim=getgenv().EnableAutoSwim,
+        EnvPause=EnvPaused, AutoSave=getgenv().AutoSaveOnExit})
     if UI_Elements.SavestatesCount then UI_Elements.SavestatesCount.Text = "States: " .. tostring(#Savestates) end
     if UI_Elements.FrameCount then UI_Elements.FrameCount.Text = "Frames: " .. tostring(#Frames) end
 
@@ -1388,7 +1379,7 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
 
         if ClonedMap then
             local ExitRegion = ClonedMap:FindFirstChild("ExitRegion", true)
-            if ExitRegion and not AutoSaved then
+            if getgenv().AutoSaveOnExit and ExitRegion and not AutoSaved then
                 if IsPointInPart(ExitRegion, LocalPlayer.Character.HumanoidRootPart.CFrame.Position) then
                     AutoSaved = true; SendAlert("Reached Exit - Auto Saving...", Color3.fromRGB(0, 255, 0))
 
@@ -1420,80 +1411,33 @@ end)
 AddConnection(HBCon)
 
 -- // INPUTS //
-local InputCon = UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe then
-        local k = input.KeyCode.Name
-        if k == Keybinds.UserPause then TogglePause()
-        elseif k == Keybinds.AddSavestate then AddSavestate()
-        elseif k == Keybinds.RemoveSavestate then RemoveSavestate()
-        elseif k == Keybinds.BackSavestate then task.spawn(LoadLastSavestate)
-        elseif k == Keybinds.CollisionToggler then ToggleCollision()
-        elseif k == Keybinds.SaveRun then
-            local Export = CompileTASData()
-            local name = (UI_Elements.SaveBox and UI_Elements.SaveBox.Text ~= "") and UI_Elements.SaveBox.Text or (ClonedMap and ClonedMap.Settings:GetAttribute("MapName") or "MyRun")
-            if not isfolder(Runtime.root .. "/TAS FILES") then makefolder(Runtime.root .. "/TAS FILES") end
-            SaveRecording(name, CompileTASData())
-            SendAlert("Run Saved!", Color3.fromRGB(0, 255, 0)); RefreshFileList()
-        elseif k == Keybinds.GoFrameForward then
-            if IsRewinding then return end
-            if not IsAdvancingFrame then task.spawn(FrameAdvanceLoop) end
-        elseif k == Keybinds.GoFrameBack then
-            if IsAdvancingFrame then IsAdvancingFrame = false; task.wait() end
-            task.spawn(RewindLoop)
-        elseif k == "Up" then IsPreviewingForward = true
-        elseif k == "Down" then IsPreviewingBackward = true
-        elseif k == Keybinds.ResetToNormal then task.spawn(ResetToNormal)
-        elseif k == Keybinds.EnvPause then
-            EnvPaused = not EnvPaused
-            SendAlert("Map Updates " .. (EnvPaused and "Paused" or "Active"), Color3.fromRGB(255, 255, 0))
-        elseif k == Keybinds.ToggleTimeReset then
-            AutoResetEnv = not AutoResetEnv
-            if UI_Elements and UI_Elements.Buttons then
-                UI_Elements.Buttons.EnvSync.Text = "Auto-Reset Env: " .. (AutoResetEnv and "ON" or "OFF")
-                UI_Elements.Buttons.EnvSync.BackgroundColor3 = AutoResetEnv and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
-            end
-            SendAlert("Smart Env Sync: " .. (AutoResetEnv and "ON" or "OFF"), Color3.fromRGB(0, 255, 255))
-        elseif k == Keybinds.Resync then
-            IsPreviewingForward = false; IsPreviewingBackward = false; PreviewOffset = 0
-            SendAlert("Visuals Resynced", Color3.fromRGB(0, 255, 255))
-        elseif k == Keybinds.ViewTAS then
-            if not IsViewingTAS then PlaybackTAS(CompileTASData()) end
-        elseif k == Keybinds.LoadRun then
-            if SelectedFileToLoad ~= "" then pcall(function() PlaybackTAS(Recordings.loadFile(SelectedFileToLoad)) end) end
-        elseif k == Keybinds.AutoSwimToggler then -- Added Keybind Handler (T)
-            getgenv().EnableAutoSwim = not getgenv().EnableAutoSwim
-            if UI_Elements and UI_Elements.Buttons and UI_Elements.Buttons.AutoSwim then
-                UI_Elements.Buttons.AutoSwim.Text = "Auto-Swim: " .. (getgenv().EnableAutoSwim and "ON" or "OFF")
-                UI_Elements.Buttons.AutoSwim.BackgroundColor3 = getgenv().EnableAutoSwim and Color3.fromRGB(0, 150, 100) or Color3.fromRGB(45, 45, 55)
-            end
-            SendAlert("Auto-Swim " .. (getgenv().EnableAutoSwim and "Enabled" or "Disabled"), getgenv().EnableAutoSwim and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0))
-        elseif k == Keybinds.DebugToggler then
-            DebugActive = not DebugActive
-            if DebugActive then
-                if ClonedMap then
-                    for _, v in pairs(ClonedMap:GetDescendants()) do
-                        if v:IsA("BasePart") then
-                            OriginalVisuals[v] = {Color = v.Color, Transparency = v.Transparency}
-                            if v.Name == "Hitbox" or v.Name:find("_Water") then v.Color = Color3.fromHSV(math.random(), 1, 1); v.Transparency = 0.2
-                            else v.Color = Color3.new(0.4, 0.4, 0.4); if v.Transparency == 1 then v.Transparency = 0.8 end end
-                        end
-                    end
-                end
-                if UI_Elements and UI_Elements.Buttons then UI_Elements.Buttons.DebugView.Text = "Debug Hitboxes: ON"; UI_Elements.Buttons.DebugView.BackgroundColor3 = Color3.fromRGB(0, 150, 100) end
-                SendAlert("Debug View Enabled", Color3.fromRGB(0, 255, 0))
-            else
-                for part, props in pairs(OriginalVisuals) do if part and part.Parent then part.Color = props.Color; part.Transparency = props.Transparency end end
-                OriginalVisuals = setmetatable({}, { __mode = "k" })
-                if UI_Elements and UI_Elements.Buttons then UI_Elements.Buttons.DebugView.Text = "Debug Hitboxes: OFF"; UI_Elements.Buttons.DebugView.BackgroundColor3 = Color3.fromRGB(45, 45, 55) end
-                SendAlert("Debug View Disabled", Color3.fromRGB(255, 0, 0))
-            end
+local InputCon = UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or UserInputService:GetFocusedTextBox() then return end
+    local key = input.KeyCode.Name
+    if key == Keybinds.GoFrameForward then
+        if not IsRewinding and not IsAdvancingFrame then task.spawn(FrameAdvanceLoop) end
+    elseif key == Keybinds.GoFrameBack then
+        IsAdvancingFrame = false
+        if not IsRewinding then task.spawn(RewindLoop) end
+    elseif key == "Up" then IsPreviewingForward = true
+    elseif key == "Down" then IsPreviewingBackward = true
+    else
+        local mapping = {UserPause="Pause", AddSavestate="AddState", RemoveSavestate="RemState", BackSavestate="LoadState",
+            CollisionToggler="Collision", SaveRun="SaveRun", ResetToNormal="Stop", EnvPause="EnvPause", ToggleTimeReset="EnvSync",
+            Resync="Resync", ViewTAS="PlayTAS", AutoSwimToggler="AutoSwim", DebugToggler="DebugView"}
+        for binding, action in pairs(mapping) do
+            if key == Keybinds[binding] and CreatorActions[action] then CreatorActions[action](); break end
         end
     end
 end)
 AddConnection(InputCon)
+getgenv().FloodGUIStopCreator = ResetToNormal
+AddConnection(UserInputService.WindowFocusReleased:Connect(function()
+    IsRewinding, IsAdvancingFrame, IsPreviewingForward, IsPreviewingBackward = false, false, false, false
+end))
 
 local InputEndCon = UserInputService.InputEnded:Connect(function(input, gpe)
-    if not gpe then
+    do
         if input.KeyCode.Name == Keybinds.GoFrameBack then IsRewinding = false end
         if input.KeyCode.Name == Keybinds.GoFrameForward then IsAdvancingFrame = false end
         if input.KeyCode.Name == "Up" then IsPreviewingForward = false end

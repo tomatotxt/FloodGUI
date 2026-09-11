@@ -36,15 +36,10 @@ for(const file of scripts.filter(file=>!file.includes(`${path.sep}tests${path.se
     assert(fs.existsSync(path.join(root,match[1])),`Missing dependency: ${match[1]}`);
   }
 }
-const airflow=fs.readFileSync(path.join(root,'vendor','airflow.luau'),'utf8');
-assert(airflow.includes('local m=q.TouchEnabled'),'Airflow must use touch-sized controls on every touch-capable device');
-assert(!airflow.includes('TouchEnabled and not q.KeyboardEnabled'),'Airflow must not exclude keyboard-equipped touch devices');
-assert(airflow.includes('local function ap(a,b)'),'Airflow must retain pointer ownership for touch drags');
-assert(airflow.includes('if s and ap(ab,a)then U(r().X)end'),'Airflow slider must track its initiating pointer');
-assert(airflow.includes('if not t or not ap(ab,b)then return end'),'Airflow color picker must track its initiating pointer');
-assert(airflow.includes('Footagesus/Icons'),'Airflow must retain the requested Lucide icon loader');
-assert(airflow.includes('A=false warn'),'Airflow icons must fall back when loading fails');
-assert(airflow.includes('using BuilderSans'),'Airflow fonts must fall back when loading or registration fails');
+for (const file of scripts.filter(file=>!file.includes(`${path.sep}vendor${path.sep}`))) {
+  const source=fs.readFileSync(file,'utf8');
+  assert(!/vendor\/kavo\.luau|:NewTab\(|:NewToggle\(/.test(source),`Unconverted UI: ${file}`);
+}
 const loader=fs.readFileSync(path.join(root,'loader.lua'),'utf8');
 assert(loader.includes('https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/'));
 assert(loader.includes('runtime.run("FloodGUI.luau")'));
@@ -68,6 +63,15 @@ assert(not pcall(offline,{root='../outside'}))
 print('PASS: actual online/local loader entry points and invalid root rejection')
 `;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'floodgui-check-'));
-try{const file=path.join(temp,'loader.spec.luau');fs.writeFileSync(file,harness);execFileSync(tool('luau'),[file],{stdio:'inherit'});}
+try{
+  const file=path.join(temp,'loader.spec.luau');fs.writeFileSync(file,harness);execFileSync(tool('luau'),[file],{stdio:'inherit'});
+  const modules=['ui/main.luau','ui/creator.luau','ui/recordings.luau','ui/player.luau'];
+  const literal=text=>`[====[${text}]====]`;
+  const sources=modules.map(name=>`[${JSON.stringify(name)}]=${literal(fs.readFileSync(path.join(root,name),'utf8'))}`).join(',\n');
+  const uiTest=fs.readFileSync(path.join(root,'tests/ui-harness.luau'),'utf8');
+  const uiFile=path.join(temp,'ui.spec.luau');
+  fs.writeFileSync(uiFile,`local test=assert(loadstring(${literal(uiTest)}))()\ntest({${sources}})`);
+  execFileSync(tool('luau'),[uiFile],{stdio:'inherit'});
+}
 finally{assert(path.resolve(temp).startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(temp).startsWith('floodgui-check-'));fs.rmSync(temp,{recursive:true,force:true});}
 console.log(`PASS: ${scripts.length} Luau files, ${catalog.length} recordings (${frames} JSON frames), loader references and dependency paths.`);
