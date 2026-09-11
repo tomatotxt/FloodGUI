@@ -45,7 +45,7 @@ git remote add origin https://github.com/tomatotxt/FloodGUI.git
 git push -u origin live
 ```
 
-The prepared local repository already has branch `live` and `origin` configured. Commit it with your Git identity, then push. No GitHub repository was created or changed during preparation. The public loader URL becomes available after that upload.
+The prepared local repository already has a committed release on branch `live` and `origin` configured; use `git push -u origin live` after creating the empty GitHub repository. The preparation commit uses the local identity `Codex <codex@localhost>`; your global Git settings were not changed. No GitHub repository was created or changed during preparation. The public loader URL becomes available after that upload.
 
 ## Maintain
 
