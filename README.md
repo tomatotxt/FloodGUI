@@ -51,7 +51,7 @@ The prepared local repository already has a committed release on branch `live` a
 
 `FloodGUI.luau` is the main app. `TAS/CREATOR/` and `TAS/PLAYER/` contain the integrated engines. `TAS/codec.luau` and `TAS/recordings.luau` define the translation and file APIs.
 
-`vendor/airflow.luau` is an optional mobile-hardened UI library. It is stored locally with no runtime HTTP dependencies, but FloodGUI continues to use its established UI while the alternate interface is tested in Roblox.
+`vendor/airflow.luau` is an optional mobile-hardened UI library. It loads its Lucide icon pack and optional custom fonts on demand, with built-in-symbol and BuilderSans fallbacks if they are unavailable. FloodGUI continues to use its established UI while the alternate interface is tested in Roblox.
 
 With Node.js and the official Luau CLI installed:
 

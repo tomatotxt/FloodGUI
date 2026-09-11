@@ -42,7 +42,9 @@ assert(!airflow.includes('TouchEnabled and not q.KeyboardEnabled'),'Airflow must
 assert(airflow.includes('local function ap(a,b)'),'Airflow must retain pointer ownership for touch drags');
 assert(airflow.includes('if s and ap(ab,a)then U(r().X)end'),'Airflow slider must track its initiating pointer');
 assert(airflow.includes('if not t or not ap(ab,b)then return end'),'Airflow color picker must track its initiating pointer');
-assert(!airflow.includes('game:HttpGet'),'Vendored Airflow must not fetch remote code or fonts');
+assert(airflow.includes('Footagesus/Icons'),'Airflow must retain the requested Lucide icon loader');
+assert(airflow.includes('A=false warn'),'Airflow icons must fall back when loading fails');
+assert(airflow.includes('using BuilderSans'),'Airflow fonts must fall back when loading or registration fails');
 const loader=fs.readFileSync(path.join(root,'loader.lua'),'utf8');
 assert(loader.includes('https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/'));
 assert(loader.includes('runtime.run("FloodGUI.luau")'));
