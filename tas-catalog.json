@@ -1,0 +1,714 @@
+[
+  {
+    "name": "Abandoned Cemetery.json",
+    "path": "TAS FILES/Abandoned Cemetery.json"
+  },
+  {
+    "name": "Abandoned Facility.json",
+    "path": "TAS FILES/Abandoned Facility.json"
+  },
+  {
+    "name": "Abandoned Junkyard.json",
+    "path": "TAS FILES/Abandoned Junkyard.json"
+  },
+  {
+    "name": "Abyssal Remnants.json",
+    "path": "TAS FILES/Abyssal Remnants.json"
+  },
+  {
+    "name": "Abyssal Tempest.json",
+    "path": "TAS FILES/Abyssal Tempest.json"
+  },
+  {
+    "name": "Active Volcanic Mines.json",
+    "path": "TAS FILES/Active Volcanic Mines.json"
+  },
+  {
+    "name": "Amphibious Billow.json",
+    "path": "TAS FILES/Amphibious Billow.json"
+  },
+  {
+    "name": "Antiquated Railways.json",
+    "path": "TAS FILES/Antiquated Railways.json"
+  },
+  {
+    "name": "Aquatic Reservoir.json",
+    "path": "TAS FILES/Aquatic Reservoir.json"
+  },
+  {
+    "name": "Archipelago.json",
+    "path": "TAS FILES/Archipelago.json"
+  },
+  {
+    "name": "Arctic Grotto.json",
+    "path": "TAS FILES/Arctic Grotto.json"
+  },
+  {
+    "name": "Autumn Fields.json",
+    "path": "TAS FILES/Autumn Fields.json"
+  },
+  {
+    "name": "Axiom.json",
+    "path": "TAS FILES/Axiom.json"
+  },
+  {
+    "name": "Baseplate.json",
+    "path": "TAS FILES/Baseplate.json"
+  },
+  {
+    "name": "Bathroom Leak.json",
+    "path": "TAS FILES/Bathroom Leak.json"
+  },
+  {
+    "name": "Beep Block Station.json",
+    "path": "TAS FILES/Beep Block Station.json"
+  },
+  {
+    "name": "Beneath The Ruins.json",
+    "path": "TAS FILES/Beneath The Ruins.json"
+  },
+  {
+    "name": "Blooming Lagoon.json",
+    "path": "TAS FILES/Blooming Lagoon.json"
+  },
+  {
+    "name": "Blue Moon.json",
+    "path": "TAS FILES/Blue Moon.json"
+  },
+  {
+    "name": "Boreal Isle.json",
+    "path": "TAS FILES/Boreal Isle.json"
+  },
+  {
+    "name": "Buried Oasis.json",
+    "path": "TAS FILES/Buried Oasis.json"
+  },
+  {
+    "name": "Cadaver Creek.json",
+    "path": "TAS FILES/Cadaver Creek.json"
+  },
+  {
+    "name": "Calamity Kingdom.json",
+    "path": "TAS FILES/Calamity Kingdom.json"
+  },
+  {
+    "name": "Cascade Rift.json",
+    "path": "TAS FILES/Cascade Rift.json"
+  },
+  {
+    "name": "Casino Of Envy.json",
+    "path": "TAS FILES/Casino Of Envy.json"
+  },
+  {
+    "name": "Castle Tides.json",
+    "path": "TAS FILES/Castle Tides.json"
+  },
+  {
+    "name": "Cave System.json",
+    "path": "TAS FILES/Cave System.json"
+  },
+  {
+    "name": "Central Mass Array.json",
+    "path": "TAS FILES/Central Mass Array.json"
+  },
+  {
+    "name": "Chaoz Japan.json",
+    "path": "TAS FILES/Chaoz Japan.json"
+  },
+  {
+    "name": "Classic Canyon.json",
+    "path": "TAS FILES/Classic Canyon.json"
+  },
+  {
+    "name": "Closing Hours.json",
+    "path": "TAS FILES/Closing Hours.json"
+  },
+  {
+    "name": "Cloudy Skylands.json",
+    "path": "TAS FILES/Cloudy Skylands.json"
+  },
+  {
+    "name": "Club Quarry.json",
+    "path": "TAS FILES/Club Quarry.json"
+  },
+  {
+    "name": "Colouring Book.json",
+    "path": "TAS FILES/Colouring Book.json"
+  },
+  {
+    "name": "Concrete Jungle.json",
+    "path": "TAS FILES/Concrete Jungle.json"
+  },
+  {
+    "name": "Construction Thrill.json",
+    "path": "TAS FILES/Construction Thrill.json"
+  },
+  {
+    "name": "Crystal Caverns.json",
+    "path": "TAS FILES/Crystal Caverns.json"
+  },
+  {
+    "name": "Cursed Jungle.json",
+    "path": "TAS FILES/Cursed Jungle.json"
+  },
+  {
+    "name": "Cyberpunk District.json",
+    "path": "TAS FILES/Cyberpunk District.json"
+  },
+  {
+    "name": "Dark Sci-Facility.json",
+    "path": "TAS FILES/Dark Sci-Facility.json"
+  },
+  {
+    "name": "Dark Sci-Forest.json",
+    "path": "TAS FILES/Dark Sci-Forest.json"
+  },
+  {
+    "name": "Decaying Silo.json",
+    "path": "TAS FILES/Decaying Silo.json"
+  },
+  {
+    "name": "Decrepit Seas.json",
+    "path": "TAS FILES/Decrepit Seas.json"
+  },
+  {
+    "name": "Deserted Frontier.json",
+    "path": "TAS FILES/Deserted Frontier.json"
+  },
+  {
+    "name": "Desolate Domain.json",
+    "path": "TAS FILES/Desolate Domain.json"
+  },
+  {
+    "name": "Despotic Ruins.json",
+    "path": "TAS FILES/Despotic Ruins.json"
+  },
+  {
+    "name": "Distorted Ignis Dimension.json",
+    "path": "TAS FILES/Distorted Ignis Dimension.json"
+  },
+  {
+    "name": "Dormant Vale.json",
+    "path": "TAS FILES/Dormant Vale.json"
+  },
+  {
+    "name": "Dreamscape Skylines.json",
+    "path": "TAS FILES/Dreamscape Skylines.json"
+  },
+  {
+    "name": "Ducky Hills.json",
+    "path": "TAS FILES/Ducky Hills.json"
+  },
+  {
+    "name": "Eerie Peaks.json",
+    "path": "TAS FILES/Eerie Peaks.json"
+  },
+  {
+    "name": "End Of The Line.json",
+    "path": "TAS FILES/End Of The Line.json"
+  },
+  {
+    "name": "Factory Center.json",
+    "path": "TAS FILES/Factory Center.json"
+  },
+  {
+    "name": "Fall Equinox.json",
+    "path": "TAS FILES/Fall Equinox.json"
+  },
+  {
+    "name": "Fallen (Classic).json",
+    "path": "TAS FILES/Fallen (Classic).json"
+  },
+  {
+    "name": "Fallen.json",
+    "path": "TAS FILES/Fallen.json"
+  },
+  {
+    "name": "Familiar Ruins.json",
+    "path": "TAS FILES/Familiar Ruins.json"
+  },
+  {
+    "name": "Flood Island.json",
+    "path": "TAS FILES/Flood Island.json"
+  },
+  {
+    "name": "Flooded Studio.json",
+    "path": "TAS FILES/Flooded Studio.json"
+  },
+  {
+    "name": "Footlight Lane.json",
+    "path": "TAS FILES/Footlight Lane.json"
+  },
+  {
+    "name": "Forest Facility.json",
+    "path": "TAS FILES/Forest Facility.json"
+  },
+  {
+    "name": "Forgotten Tombs.json",
+    "path": "TAS FILES/Forgotten Tombs.json"
+  },
+  {
+    "name": "Forsaken Era.json",
+    "path": "TAS FILES/Forsaken Era.json"
+  },
+  {
+    "name": "Frostbite Coastline.json",
+    "path": "TAS FILES/Frostbite Coastline.json"
+  },
+  {
+    "name": "Gallery of Illusion.json",
+    "path": "TAS FILES/Gallery of Illusion.json"
+  },
+  {
+    "name": "Glacial Warfare.json",
+    "path": "TAS FILES/Glacial Warfare.json"
+  },
+  {
+    "name": "Gloomy Manor.json",
+    "path": "TAS FILES/Gloomy Manor.json"
+  },
+  {
+    "name": "Golden Passage.json",
+    "path": "TAS FILES/Golden Passage.json"
+  },
+  {
+    "name": "Graveyard Cliffside.json",
+    "path": "TAS FILES/Graveyard Cliffside.json"
+  },
+  {
+    "name": "Grumbling Mineshafts.json",
+    "path": "TAS FILES/Grumbling Mineshafts.json"
+  },
+  {
+    "name": "Hallowed Vestige.json",
+    "path": "TAS FILES/Hallowed Vestige.json"
+  },
+  {
+    "name": "Harvest Falls.json",
+    "path": "TAS FILES/Harvest Falls.json"
+  },
+  {
+    "name": "Heights Island.json",
+    "path": "TAS FILES/Heights Island.json"
+  },
+  {
+    "name": "Hovering Enclaves.json",
+    "path": "TAS FILES/Hovering Enclaves.json"
+  },
+  {
+    "name": "Icy Spires.json",
+    "path": "TAS FILES/Icy Spires.json"
+  },
+  {
+    "name": "Ignis Peaks.json",
+    "path": "TAS FILES/Ignis Peaks.json"
+  },
+  {
+    "name": "Infiltration.json",
+    "path": "TAS FILES/Infiltration.json"
+  },
+  {
+    "name": "Insular Solstice.json",
+    "path": "TAS FILES/Insular Solstice.json"
+  },
+  {
+    "name": "Interstice Mindscape.json",
+    "path": "TAS FILES/Interstice Mindscape.json"
+  },
+  {
+    "name": "Irradiating Alpines.json",
+    "path": "TAS FILES/Irradiating Alpines.json"
+  },
+  {
+    "name": "Jungle Exploration.json",
+    "path": "TAS FILES/Jungle Exploration.json"
+  },
+  {
+    "name": "Kozui Peak.json",
+    "path": "TAS FILES/Kozui Peak.json"
+  },
+  {
+    "name": "Lava Tower.json",
+    "path": "TAS FILES/Lava Tower.json"
+  },
+  {
+    "name": "Lighthouse.json",
+    "path": "TAS FILES/Lighthouse.json"
+  },
+  {
+    "name": "Lilac Valley.json",
+    "path": "TAS FILES/Lilac Valley.json"
+  },
+  {
+    "name": "Liminal Fruticore.json",
+    "path": "TAS FILES/Liminal Fruticore.json"
+  },
+  {
+    "name": "Lost City of Gold.json",
+    "path": "TAS FILES/Lost City of Gold.json"
+  },
+  {
+    "name": "Lost Desert.json",
+    "path": "TAS FILES/Lost Desert.json"
+  },
+  {
+    "name": "Lost Woods.json",
+    "path": "TAS FILES/Lost Woods.json"
+  },
+  {
+    "name": "Luminance.json",
+    "path": "TAS FILES/Luminance.json"
+  },
+  {
+    "name": "Luminous Reservoir.json",
+    "path": "TAS FILES/Luminous Reservoir.json"
+  },
+  {
+    "name": "Magmatic Mines.json",
+    "path": "TAS FILES/Magmatic Mines.json"
+  },
+  {
+    "name": "Marigold Meadows.json",
+    "path": "TAS FILES/Marigold Meadows.json"
+  },
+  {
+    "name": "Marred Dreams.json",
+    "path": "TAS FILES/Marred Dreams.json"
+  },
+  {
+    "name": "Mars Stations.json",
+    "path": "TAS FILES/Mars Stations.json"
+  },
+  {
+    "name": "Mayan Remnants.json",
+    "path": "TAS FILES/Mayan Remnants.json"
+  },
+  {
+    "name": "Minds Of Misery.json",
+    "path": "TAS FILES/Minds Of Misery.json"
+  },
+  {
+    "name": "Moonlight Forest.json",
+    "path": "TAS FILES/Moonlight Forest.json"
+  },
+  {
+    "name": "Mossy Shrine.json",
+    "path": "TAS FILES/Mossy Shrine.json"
+  },
+  {
+    "name": "Mysterium.json",
+    "path": "TAS FILES/Mysterium.json"
+  },
+  {
+    "name": "Mystic Fortress.json",
+    "path": "TAS FILES/Mystic Fortress.json"
+  },
+  {
+    "name": "Nightmare Castle.json",
+    "path": "TAS FILES/Nightmare Castle.json"
+  },
+  {
+    "name": "Nimble Valley.json",
+    "path": "TAS FILES/Nimble Valley.json"
+  },
+  {
+    "name": "Northern Mill.json",
+    "path": "TAS FILES/Northern Mill.json"
+  },
+  {
+    "name": "Oil Outpost.json",
+    "path": "TAS FILES/Oil Outpost.json"
+  },
+  {
+    "name": "Onama Views.json",
+    "path": "TAS FILES/Onama Views.json"
+  },
+  {
+    "name": "Orbital Overlook.json",
+    "path": "TAS FILES/Orbital Overlook.json"
+  },
+  {
+    "name": "Oriental Grove.json",
+    "path": "TAS FILES/Oriental Grove.json"
+  },
+  {
+    "name": "Outlier of a Coppice Carcass.json",
+    "path": "TAS FILES/Outlier of a Coppice Carcass.json"
+  },
+  {
+    "name": "Pascha Equinox.json",
+    "path": "TAS FILES/Pascha Equinox.json"
+  },
+  {
+    "name": "Pitfall Temple.json",
+    "path": "TAS FILES/Pitfall Temple.json"
+  },
+  {
+    "name": "Poisonous Chasm.json",
+    "path": "TAS FILES/Poisonous Chasm.json"
+  },
+  {
+    "name": "Poisonous Forest.json",
+    "path": "TAS FILES/Poisonous Forest.json"
+  },
+  {
+    "name": "Poisonous Valley.json",
+    "path": "TAS FILES/Poisonous Valley.json"
+  },
+  {
+    "name": "Polar Industry.json",
+    "path": "TAS FILES/Polar Industry.json"
+  },
+  {
+    "name": "Pursuit.json",
+    "path": "TAS FILES/Pursuit.json"
+  },
+  {
+    "name": "Relic Valley.json",
+    "path": "TAS FILES/Relic Valley.json"
+  },
+  {
+    "name": "Retro Coast.json",
+    "path": "TAS FILES/Retro Coast.json"
+  },
+  {
+    "name": "Rustic Jungle.json",
+    "path": "TAS FILES/Rustic Jungle.json"
+  },
+  {
+    "name": "Sakura Falls.json",
+    "path": "TAS FILES/Sakura Falls.json"
+  },
+  {
+    "name": "Sandbox Scamper.json",
+    "path": "TAS FILES/Sandbox Scamper.json"
+  },
+  {
+    "name": "Sandstorm Dunes.json",
+    "path": "TAS FILES/Sandstorm Dunes.json"
+  },
+  {
+    "name": "Sandswept Ruins.json",
+    "path": "TAS FILES/Sandswept Ruins.json"
+  },
+  {
+    "name": "Sanguineous Luna.json",
+    "path": "TAS FILES/Sanguineous Luna.json"
+  },
+  {
+    "name": "Sapphire Falls.json",
+    "path": "TAS FILES/Sapphire Falls.json"
+  },
+  {
+    "name": "Satomi Springs.json",
+    "path": "TAS FILES/Satomi Springs.json"
+  },
+  {
+    "name": "Sedimentary Temple.json",
+    "path": "TAS FILES/Sedimentary Temple.json"
+  },
+  {
+    "name": "Shimmering Delta.json",
+    "path": "TAS FILES/Shimmering Delta.json"
+  },
+  {
+    "name": "Sinister Labyrinth.json",
+    "path": "TAS FILES/Sinister Labyrinth.json"
+  },
+  {
+    "name": "Sinking Ship.json",
+    "path": "TAS FILES/Sinking Ship.json"
+  },
+  {
+    "name": "Sky Sanctuary.json",
+    "path": "TAS FILES/Sky Sanctuary.json"
+  },
+  {
+    "name": "Skywork Falls.json",
+    "path": "TAS FILES/Skywork Falls.json"
+  },
+  {
+    "name": "Smoldering Fractured Realm.json",
+    "path": "TAS FILES/Smoldering Fractured Realm.json"
+  },
+  {
+    "name": "Snowscape Odyssey.json",
+    "path": "TAS FILES/Snowscape Odyssey.json"
+  },
+  {
+    "name": "Snowswept Gully.json",
+    "path": "TAS FILES/Snowswept Gully.json"
+  },
+  {
+    "name": "Snowy Peaks.json",
+    "path": "TAS FILES/Snowy Peaks.json"
+  },
+  {
+    "name": "Snowy Stronghold.json",
+    "path": "TAS FILES/Snowy Stronghold.json"
+  },
+  {
+    "name": "Spider Dungeon.json",
+    "path": "TAS FILES/Spider Dungeon.json"
+  },
+  {
+    "name": "Splendid China Wall.json",
+    "path": "TAS FILES/Splendid China Wall.json"
+  },
+  {
+    "name": "Spring Valley.json",
+    "path": "TAS FILES/Spring Valley.json"
+  },
+  {
+    "name": "Star Manor.json",
+    "path": "TAS FILES/Star Manor.json"
+  },
+  {
+    "name": "Starry Fields.json",
+    "path": "TAS FILES/Starry Fields.json"
+  },
+  {
+    "name": "Starstruck Palace.json",
+    "path": "TAS FILES/Starstruck Palace.json"
+  },
+  {
+    "name": "Steam Palaces.json",
+    "path": "TAS FILES/Steam Palaces.json"
+  },
+  {
+    "name": "Steampunk Clockworks.json",
+    "path": "TAS FILES/Steampunk Clockworks.json"
+  },
+  {
+    "name": "Strawberry Springs.json",
+    "path": "TAS FILES/Strawberry Springs.json"
+  },
+  {
+    "name": "Sub-Zerosphere.json",
+    "path": "TAS FILES/Sub-Zerosphere.json"
+  },
+  {
+    "name": "Submerging Coastland.json",
+    "path": "TAS FILES/Submerging Coastland.json"
+  },
+  {
+    "name": "Sulphureous Sea.json",
+    "path": "TAS FILES/Sulphureous Sea.json"
+  },
+  {
+    "name": "Sulphuric Depths.json",
+    "path": "TAS FILES/Sulphuric Depths.json"
+  },
+  {
+    "name": "Summit.json",
+    "path": "TAS FILES/Summit.json"
+  },
+  {
+    "name": "Sunken Citadel.json",
+    "path": "TAS FILES/Sunken Citadel.json"
+  },
+  {
+    "name": "Sunlit Villas.json",
+    "path": "TAS FILES/Sunlit Villas.json"
+  },
+  {
+    "name": "Sunset Fairway.json",
+    "path": "TAS FILES/Sunset Fairway.json"
+  },
+  {
+    "name": "The Fury of Boreas.json",
+    "path": "TAS FILES/The Fury of Boreas.json"
+  },
+  {
+    "name": "The Judgement of Hephaestus.json",
+    "path": "TAS FILES/The Judgement of Hephaestus.json"
+  },
+  {
+    "name": "The Malfunction of Time.json",
+    "path": "TAS FILES/The Malfunction of Time.json"
+  },
+  {
+    "name": "Thunderous Shoreline.json",
+    "path": "TAS FILES/Thunderous Shoreline.json"
+  },
+  {
+    "name": "Toxic Woods.json",
+    "path": "TAS FILES/Toxic Woods.json"
+  },
+  {
+    "name": "Toybox Trouble.json",
+    "path": "TAS FILES/Toybox Trouble.json"
+  },
+  {
+    "name": "Trenched Sonar Station.json",
+    "path": "TAS FILES/Trenched Sonar Station.json"
+  },
+  {
+    "name": "Twilight Athenaeum.json",
+    "path": "TAS FILES/Twilight Athenaeum.json"
+  },
+  {
+    "name": "Undersea Facility.json",
+    "path": "TAS FILES/Undersea Facility.json"
+  },
+  {
+    "name": "Underworld Castle.json",
+    "path": "TAS FILES/Underworld Castle.json"
+  },
+  {
+    "name": "Underworld Grove.json",
+    "path": "TAS FILES/Underworld Grove.json"
+  },
+  {
+    "name": "Unyielding Dusk.json",
+    "path": "TAS FILES/Unyielding Dusk.json"
+  },
+  {
+    "name": "Venomous Vistas.json",
+    "path": "TAS FILES/Venomous Vistas.json"
+  },
+  {
+    "name": "Virulent Junkyard.json",
+    "path": "TAS FILES/Virulent Junkyard.json"
+  },
+  {
+    "name": "Wasteland Junction.json",
+    "path": "TAS FILES/Wasteland Junction.json"
+  },
+  {
+    "name": "Whirlwind Wasteland.json",
+    "path": "TAS FILES/Whirlwind Wasteland.json"
+  },
+  {
+    "name": "Whispering Nocturnal.json",
+    "path": "TAS FILES/Whispering Nocturnal.json"
+  },
+  {
+    "name": "Wild Savannah.json",
+    "path": "TAS FILES/Wild Savannah.json"
+  },
+  {
+    "name": "Wild Skatepark.json",
+    "path": "TAS FILES/Wild Skatepark.json"
+  },
+  {
+    "name": "Wildwood Waterways.json",
+    "path": "TAS FILES/Wildwood Waterways.json"
+  },
+  {
+    "name": "Windswept Valley.json",
+    "path": "TAS FILES/Windswept Valley.json"
+  },
+  {
+    "name": "Wintertide Haven.json",
+    "path": "TAS FILES/Wintertide Haven.json"
+  },
+  {
+    "name": "Year of the Flood.json",
+    "path": "TAS FILES/Year of the Flood.json"
+  },
+  {
+    "name": "Zemblanity.json",
+    "path": "TAS FILES/Zemblanity.json"
+  }
+]
