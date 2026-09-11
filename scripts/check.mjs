@@ -36,6 +36,13 @@ for(const file of scripts.filter(file=>!file.includes(`${path.sep}tests${path.se
     assert(fs.existsSync(path.join(root,match[1])),`Missing dependency: ${match[1]}`);
   }
 }
+const airflow=fs.readFileSync(path.join(root,'vendor','airflow.luau'),'utf8');
+assert(airflow.includes('local m=q.TouchEnabled'),'Airflow must use touch-sized controls on every touch-capable device');
+assert(!airflow.includes('TouchEnabled and not q.KeyboardEnabled'),'Airflow must not exclude keyboard-equipped touch devices');
+assert(airflow.includes('local function ap(a,b)'),'Airflow must retain pointer ownership for touch drags');
+assert(airflow.includes('if s and ap(ab,a)then U(r().X)end'),'Airflow slider must track its initiating pointer');
+assert(airflow.includes('if not t or not ap(ab,b)then return end'),'Airflow color picker must track its initiating pointer');
+assert(!airflow.includes('game:HttpGet'),'Vendored Airflow must not fetch remote code or fonts');
 const loader=fs.readFileSync(path.join(root,'loader.lua'),'utf8');
 assert(loader.includes('https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/'));
 assert(loader.includes('runtime.run("FloodGUI.luau")'));
