@@ -56,7 +56,6 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
 local UserInputService = game:GetService("UserInputService")
-local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
@@ -714,7 +713,7 @@ local Interface = Runtime.run("ui/main.luau")({
     resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,
     unload=Session.Cleanup,
     swimAvailable=type(hookmetamethod)=="function" and type(checkcaller)=="function",
-    rejoin=function() TeleportService:Teleport(game.PlaceId,LocalPlayer) end,
+    rejoin=Runtime.run("rejoin.luau")(getfenv(), Alert, TrackConnection),
     infiniteYield=function() LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source") end,
     copyInvite=function()
         if type(setclipboard)=="function" then setclipboard(CONFIG.DISCORD_INVITE); Alert("Support invite copied.","Success")

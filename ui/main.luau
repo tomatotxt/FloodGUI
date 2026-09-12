@@ -460,7 +460,14 @@ return function(context)
 			)
 		end
 	)
-	button(settings, "Rejoin", "Rejoin game", nil, "log-in", context.rejoin)
+	button(
+		settings,
+		"Rejoin",
+		"Rejoin game",
+		"Hop to baseplate, wait 3.6 seconds, then return to this server. Save your recording first.",
+		"log-in",
+		context.rejoin
+	)
 	button(
 		settings,
 		"InfiniteYield",
