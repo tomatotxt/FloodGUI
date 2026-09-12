@@ -72,6 +72,13 @@ try{
   const uiFile=path.join(temp,'ui.spec.luau');
   fs.writeFileSync(uiFile,`local test=assert(loadstring(${literal(uiTest)}))()\ntest({${sources}})`);
   execFileSync(tool('luau'),[uiFile],{stdio:'inherit'});
+  const airflowSource=fs.readFileSync(path.join(root,'vendor/airflow.luau'),'utf8');
+  const iconPatterns=[/Icon\s*=\s*"([a-z][a-z0-9-]*)"/g, /\btab\(\s*"[^"]*",\s*"[^"]*",\s*"([^"]*)"/g, /\b(?:action|button)\(\s*[^,]+,\s*"[^"]*",\s*"[^"]*",\s*(?:nil|"[^"]*"),\s*"([^"]*)"/g];
+  const iconNames=[...new Set(modules.concat('ui/service.luau').flatMap(name=>iconPatterns.flatMap(pattern=>[...fs.readFileSync(path.join(root,name),'utf8').matchAll(pattern)].map(match=>match[1]))))];
+  const airflowTest=fs.readFileSync(path.join(root,'tests/airflow-harness.luau'),'utf8');
+  const airflowFile=path.join(temp,'airflow.spec.luau');
+  fs.writeFileSync(airflowFile,`local test=assert(loadstring(${literal(airflowTest)}))()\ntest(${literal(airflowSource)}, {${iconNames.map(JSON.stringify).join(',')}})`);
+  execFileSync(tool('luau'),[airflowFile],{stdio:'inherit'});
 }
 finally{assert(path.resolve(temp).startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(temp).startsWith('floodgui-check-'));fs.rmSync(temp,{recursive:true,force:true});}
 console.log(`PASS: ${scripts.length} Luau files, ${catalog.length} recordings (${frames} JSON frames), loader references and dependency paths.`);
