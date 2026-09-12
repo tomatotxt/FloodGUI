@@ -18,7 +18,9 @@ return function(serviceSource, touchSource)
 	local input = { InputEnded = signal(), WindowFocusReleased = signal() }
 	local enums = { KeyCode = { J = "J" }, UserInputType = { Touch = "Touch", MouseButton1 = "MouseButton1" } }
 	local library = { Theme = {} }
-	function library:Window()
+	local playerGui, warnings = {}, 0
+	function library:Window(options)
+		assert(options.Parent == playerGui, "Every FloodGUI window must use PlayerGui")
 		local window = { Open = true, Gui = { Destroying = signal() }, Root = { Visible = true }, cancel = {} }
 		window.Root.GetPropertyChangedSignal = function()
 			return signal()
@@ -68,7 +70,17 @@ return function(serviceSource, touchSource)
 			end,
 		},
 		game = {
-			GetService = function()
+			GetService = function(_, name)
+				if name == "Players" then
+					return {
+						LocalPlayer = {
+							WaitForChild = function(_, child)
+								assert(child == "PlayerGui")
+								return playerGui
+							end,
+						},
+					}
+				end
 				return input
 			end,
 		},
@@ -77,7 +89,9 @@ return function(serviceSource, touchSource)
 				table.insert(pending, fn)
 			end,
 		},
-		warn = function() end,
+		warn = function()
+			warnings += 1
+		end,
 	}, { __index = getfenv() })
 	local function load(source)
 		local fn = assert(loadstring(source))
@@ -146,6 +160,14 @@ return function(serviceSource, touchSource)
 	assert(service.windows.main == nil)
 	service.notify("still visible")
 	assert(creator.message.Content == "still visible")
+	local originalNotify = creator.Notify
+	creator.Notify = function()
+		error("The current thread cannot access 'Instance' (lacking capability Plugin)")
+	end
+	assert(service.notify("failure") == false, "Notification failure must not stop the caller")
+	assert(service.notify("failure again") == false and warnings == 1, "Do not flood logs on repeated failures")
+	creator.Notify = originalNotify
+	assert(service.notify("recovered") == true and creator.message.Content == "recovered")
 	service.destroy()
 	assert(creator._destroyed and service.destroyed and next(service.windows) == nil)
 	assert(not pcall(service.window, "late", "Late"), "Unloaded service cannot open zombie windows")

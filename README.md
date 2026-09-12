@@ -51,6 +51,8 @@ The prepared local repository uses branch `live` with `origin` configured. After
 
 `preferences.luau` manages device-local `preferences.json` (excluded from Git); `overrides.luau` tracks reversible character properties. Settings → Unload FloodGUI stops the session and removes its windows. Save any active creator recording before unloading.
 
+All FloodGUI windows use `PlayerGui` to avoid protected-container permission failures in game/input callbacks. `compat.luau` isolates game-alert calls on worker threads and optionally restores the worker's previous identity through available UNC/sUNC functions. These identity APIs are not required for the UI. If a notification cannot render, the error is logged without stopping FloodGUI. Lucide icons, custom-font loading, and the theme are unchanged.
+
 With Node.js and the official Luau CLI installed:
 
 ```sh

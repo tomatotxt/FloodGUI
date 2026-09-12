@@ -1,4 +1,5 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
+local Compat = Runtime.run("compat.luau")()
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
 local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
 if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
@@ -78,7 +79,7 @@ local function Log(msg, category)
     print(text)
     UI.notify(text, category)
     if CLMAIN and type(CLMAIN.newAlert) == "function" then
-        pcall(CLMAIN.newAlert, text, color)
+        Compat.gameAlert(CLMAIN.newAlert, text, color)
     end
 end
 

@@ -1,4 +1,5 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
+local Compat = Runtime.run("compat.luau")()
 getgenv().TAS_Active = true
 
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
@@ -50,21 +51,21 @@ local function SetupAlerts()
     local GameScript = LocalPlayer.PlayerScripts:WaitForChild("CL_MAIN_GameScript", 5)
     if GameScript then
         local success, env = pcall(getsenv, GameScript)
-        if success and env.newAlert then NewAlert = env.newAlert end
+        if success and type(env) == "table" and type(env.newAlert) == "function" then NewAlert = env.newAlert end
     end
 end
 SetupAlerts()
 
 local function SendAlert(msg, color)
     if NewAlert then
-        pcall(function() NewAlert(msg, color, 1.5, nil) end)
+        Compat.gameAlert(NewAlert, msg, color, 1.5, nil)
     else
         local GameScript = LocalPlayer.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
         if GameScript then
             local s, e = pcall(getsenv, GameScript)
-            if s and e and e.newAlert then
+            if s and type(e) == "table" and type(e.newAlert) == "function" then
                 NewAlert = e.newAlert
-                pcall(function() NewAlert(msg, color, 1.5, nil) end)
+                Compat.gameAlert(NewAlert, msg, color, 1.5, nil)
             end
         end
     end

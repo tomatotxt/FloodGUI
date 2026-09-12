@@ -2039,18 +2039,26 @@ local function b(e, f, a, b, c)
 end
 local function c(d, b, c)
 	local a = Instance.new(d)
-	for b, c in pairs(b) do
-		if b ~= "Parent" then
-			a[b] = c
+	local ok, message = pcall(function()
+		for b, c in pairs(b) do
+			if b ~= "Parent" then
+				a[b] = c
+			end
 		end
-	end
-	if c then
-		for c, b in ipairs(c) do
-			b.Parent = a
+		if c then
+			for c, b in ipairs(c) do
+				b.Parent = a
+			end
 		end
-	end
-	if b.Parent then
-		a.Parent = b.Parent
+		if b.Parent then
+			a.Parent = b.Parent
+		end
+	end)
+	if not ok then
+		pcall(function()
+			a:Destroy()
+		end)
+		error(message, 2)
 	end
 	return a
 end
@@ -2058,16 +2066,13 @@ local function e(a, b)
 	return c("UICorner", { CornerRadius = b or UDim.new(0, 8), Parent = a })
 end
 local function h(b, d, e, f)
-	return c(
-		"UIStroke",
-		{
-			Color = d or a.Stroke,
-			Transparency = e or 0,
-			Thickness = f or 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Parent = b,
-		}
-	)
+	return c("UIStroke", {
+		Color = d or a.Stroke,
+		Transparency = e or 0,
+		Thickness = f or 1,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = b,
+	})
 end
 local function o(a, b, d, e, f)
 	return c("UIPadding", {
@@ -2132,26 +2137,10 @@ local function u(a, c)
 	a.ImageRectSize = e or Vector2.zero
 end
 local function ag()
-	local b
-	pcall(function()
-		if typeof(gethui) == "function" then
-			b = gethui()
-		end
-	end)
-	if typeof(b) == "Instance" then
-		return b
-	end
-	local a
-	local ok = pcall(function()
-		a = game:GetService("CoreGui")
-		local b = Instance.new("Folder")
-		b.Parent = a
-		b:Destroy()
-	end)
-	if ok and a then
-		return a
-	end
-	return E:WaitForChild("PlayerGui")
+	-- A gethui/CoreGui container writable at startup may require Plugin
+	-- capabilities when a later game or input callback touches its descendants.
+	-- PlayerGui is safe for ordinary UI callbacks and persists via ResetOnSpawn.
+	return assert(E:WaitForChild("PlayerGui", 10), "Airflow requires the local PlayerGui")
 end
 local function r(input)
 	if input and input.UserInputType == Enum.UserInputType.Touch then
@@ -2178,26 +2167,20 @@ local function ownsPointer(a, b)
 		and b.UserInputType == Enum.UserInputType.MouseMovement
 end
 local function y(d, e, f, g)
-	local a = c(
-		"Frame",
-		{
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = g,
-			Size = UDim2.fromOffset(16, 16),
-			BackgroundTransparency = 1,
-			Parent = d,
-		}
-	)
-	local b = c(
-		"ImageLabel",
-		{
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			ImageColor3 = f,
-			ScaleType = Enum.ScaleType.Fit,
-			Parent = a,
-		}
-	)
+	local a = c("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = g,
+		Size = UDim2.fromOffset(16, 16),
+		BackgroundTransparency = 1,
+		Parent = d,
+	})
+	local b = c("ImageLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ImageColor3 = f,
+		ScaleType = Enum.ScaleType.Fit,
+		Parent = a,
+	})
 	u(b, e)
 	return a, b
 end
@@ -2400,15 +2383,12 @@ function j:Section(b)
 	if type(b) == "table" then
 		b = b.Name or b.Title or ""
 	end
-	local f = c(
-		"Frame",
-		{
-			Size = UDim2.new(1, 0, 0, 28),
-			BackgroundTransparency = 1,
-			LayoutOrder = self:_nextOrder(),
-			Parent = self.List,
-		}
-	)
+	local f = c("Frame", {
+		Size = UDim2.new(1, 0, 0, 28),
+		BackgroundTransparency = 1,
+		LayoutOrder = self:_nextOrder(),
+		Parent = self.List,
+	})
 	local e = d({
 		Position = UDim2.fromOffset(2, 8),
 		Size = UDim2.new(0, 0, 0, 16),
@@ -2750,18 +2730,14 @@ function j:Slider(g)
 		Parent = q,
 	})
 	local E, G =
-		c(
-			"TextButton",
-			{
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text = "",
-				AutoButtonColor = false,
-				ZIndex = 2,
-				Parent = q,
-			}
-		),
-		false
+		c("TextButton", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 2,
+			Parent = q,
+		}), false
 	local function H(c)
 		local a
 		if G then
@@ -3014,8 +2990,7 @@ function j:Dropdown(f)
 			TextSize = 13,
 			Visible = false,
 			Parent = q,
-		}),
-		""
+		}), ""
 	local function W()
 		A.Text = x
 		if A.TextBounds.X <= 146 then
@@ -3586,16 +3561,13 @@ function j:ColorPicker(j)
 	e(H, UDim.new(0, 6))
 	h(H, a.Stroke)
 	local S = Z(A, 1, -12)
-	local o = c(
-		l,
-		{
-			Position = UDim2.fromOffset(14, u + 2),
-			Size = UDim2.new(1, -28, 0, 156),
-			BackgroundTransparency = 1,
-			Visible = false,
-			Parent = m,
-		}
-	)
+	local o = c(l, {
+		Position = UDim2.fromOffset(14, u + 2),
+		Size = UDim2.new(1, -28, 0, 156),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = m,
+	})
 	local g = c(E, {
 		Size = UDim2.new(1, -30, 0, 110),
 		BackgroundColor3 = Color3.new(1, 1, 1),
@@ -3614,16 +3586,13 @@ function j:ColorPicker(j)
 		Rotation = 90,
 		Parent = U,
 	})
-	local v = c(
-		l,
-		{
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Size = UDim2.fromOffset(10, 10),
-			BackgroundTransparency = 1,
-			ZIndex = 3,
-			Parent = g,
-		}
-	)
+	local v = c(l, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(10, 10),
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+		Parent = g,
+	})
 	e(v, UDim.new(1, 0))
 	h(v, Color3.new(1, 1, 1), 0, 2)
 	local q = c(E, {
@@ -4298,16 +4267,13 @@ function f.Window(ab, k)
 		Parent = z,
 	})
 	j.Shadow = Q
-	local n = c(
-		H,
-		{
-			Name = "Body",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = a.Background,
-			BorderSizePixel = 0,
-			Parent = z,
-		}
-	)
+	local n = c(H, {
+		Name = "Body",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = a.Background,
+		BorderSizePixel = 0,
+		Parent = z,
+	})
 	j.Body = n
 	e(n, UDim.new(0, 10))
 	j.BodyStroke = h(n, a.Stroke)
@@ -4317,16 +4283,13 @@ function f.Window(ab, k)
 	x(n, UDim2.fromOffset(520, 240), UDim2.new(1, -14, 0, 10), 0.92, 90)
 	local C = c(p, { Name = "Sidebar", Size = UDim2.new(0, 170, 1, 0), BackgroundTransparency = 1, Parent = n })
 	j.Sidebar = C
-	j.SidebarDivider = c(
-		p,
-		{
-			Position = UDim2.new(0, 200, 0, 28),
-			Size = UDim2.new(0, 1, 1, -56),
-			BackgroundColor3 = a.Stroke,
-			BorderSizePixel = 0,
-			Parent = n,
-		}
-	)
+	j.SidebarDivider = c(p, {
+		Position = UDim2.new(0, 200, 0, 28),
+		Size = UDim2.new(0, 1, 1, -56),
+		BackgroundColor3 = a.Stroke,
+		BorderSizePixel = 0,
+		Parent = n,
+	})
 	local J = c(p, { Name = "Header", Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1, Parent = C })
 	j.Header = J
 	J.Active = true
@@ -4442,28 +4405,22 @@ function f.Window(ab, k)
 		Parent = n,
 	})
 	j.Content = E
-	j._outLayer = c(
-		H,
-		{
-			Name = "TransitionOut",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Visible = false,
-			ZIndex = 2,
-			Parent = E,
-		}
-	)
-	j._inLayer = c(
-		H,
-		{
-			Name = "TransitionIn",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Visible = false,
-			ZIndex = 3,
-			Parent = E,
-		}
-	)
+	j._outLayer = c(H, {
+		Name = "TransitionOut",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 2,
+		Parent = E,
+	})
+	j._inLayer = c(H, {
+		Name = "TransitionIn",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 3,
+		Parent = E,
+	})
 	local w = c("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -14, 0, 14),
@@ -5327,16 +5284,13 @@ local function as(f, g, h)
 	return b, j, e
 end
 local function at(g, i, f, j)
-	local b = c(
-		"Frame",
-		{
-			Size = UDim2.new(0.5, -4, 0, 62),
-			BackgroundColor3 = a.Surface2,
-			BorderSizePixel = 0,
-			LayoutOrder = i,
-			Parent = g,
-		}
-	)
+	local b = c("Frame", {
+		Size = UDim2.new(0.5, -4, 0, 62),
+		BackgroundColor3 = a.Surface2,
+		BorderSizePixel = 0,
+		LayoutOrder = i,
+		Parent = g,
+	})
 	e(b)
 	h(b)
 	b:SetAttribute("NoDrag", true)
@@ -5413,16 +5367,13 @@ function g:_buildHome(f)
 		local b = a < 12 and "morning" or (a < 18 and "afternoon" or "evening")
 		y = "Good " .. b .. "."
 	end
-	local j = c(
-		g,
-		{
-			Size = UDim2.new(1, 0, 0, 58),
-			BackgroundColor3 = a.Surface2,
-			BorderSizePixel = 0,
-			LayoutOrder = 2,
-			Parent = q,
-		}
-	)
+	local j = c(g, {
+		Size = UDim2.new(1, 0, 0, 58),
+		BackgroundColor3 = a.Surface2,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		Parent = q,
+	})
 	j:SetAttribute(p, true)
 	e(j)
 	h(j)
@@ -5459,16 +5410,13 @@ function g:_buildHome(f)
 		TextColor3 = a.Muted,
 		Parent = j,
 	})
-	local t = c(
-		g,
-		{
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-			LayoutOrder = 3,
-			Parent = q,
-		}
-	)
+	local t = c(g, {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 3,
+		Parent = q,
+	})
 	c(n, { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8), Parent = t })
 	if f.Sections ~= false then
 		local b = c(g, { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, LayoutOrder = 1, Parent = t })
@@ -5496,16 +5444,13 @@ function g:_buildHome(f)
 		e:GetPropertyChangedSignal("AbsoluteSize"):Connect(h)
 		task.defer(h)
 	end
-	local C = c(
-		g,
-		{
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-			LayoutOrder = 2,
-			Parent = t,
-		}
-	)
+	local C = c(g, {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		Parent = t,
+	})
 	c("UIGridLayout", {
 		CellSize = UDim2.new(0.5, -4, 0, 62),
 		CellPadding = UDim2.fromOffset(8, 8),
@@ -5827,16 +5772,13 @@ function g:Tab(g, t)
 		TextColor3 = a.Muted,
 		Parent = k,
 	})
-	local m = c(
-		"Frame",
-		{
-			Name = f.Name,
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Visible = false,
-			Parent = self.Content,
-		}
-	)
+	local m = c("Frame", {
+		Name = f.Name,
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = self.Content,
+	})
 	f._page = m
 	d({ Position = UDim2.fromOffset(24, 20), Size = UDim2.new(1, -72, 0, 24), Text = f.Name, TextSize = 22, Parent = m })
 	if g.Desc then
@@ -6298,20 +6240,20 @@ function g:SetKeybind(a)
 	self._keyChipLabel.Text = P(a)
 end
 function g:Notify(f)
+	if self._destroyed then
+		return
+	end
 	local k = "Frame"
 	f = l(f, { Text = "Content", Message = "Content", Image = "Icon" })
 	local u = f.Duration or 4
 	local s = an[f.Type] or a.Text
 	self._notifyOrder += 1
-	local j = c(
-		k,
-		{
-			Size = UDim2.new(1, 0, 0, 0),
-			BackgroundTransparency = 1,
-			LayoutOrder = self._notifyOrder,
-			Parent = self.NotifyHolder,
-		}
-	)
+	local j = c(k, {
+		Size = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+		LayoutOrder = self._notifyOrder,
+		Parent = self.NotifyHolder,
+	})
 	local r = c(k, {
 		Position = UDim2.fromOffset(320, 0),
 		Size = UDim2.new(1, 0, 0, 0),

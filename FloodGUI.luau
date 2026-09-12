@@ -1,5 +1,6 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
 local Automation = Runtime.run("automation.luau")
+local Compat = Runtime.run("compat.luau")()
 local Overrides = Runtime.run("overrides.luau")()
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
 getgenv().FloodGUIRecordings = Recordings
@@ -179,10 +180,7 @@ local function Alert(Text, ColorType)
     local Output = tostring(Text)
     local SelectedColor = COLORS[ColorType] or COLORS.System
     if State.AlertsEnabled and CLMAINenv and CLMAINenv.newAlert then
-        pcall(function()
-            -- Structure: newAlert(Message, Color, Time, Style)
-            CLMAINenv.newAlert(Output, SelectedColor, nil, nil)
-        end)
+        Compat.gameAlert(CLMAINenv.newAlert, Output, SelectedColor, nil, nil)
     end
     if UI then UI.notify(Output, ColorType) end
     print("[FloodGUI]: " .. Output)

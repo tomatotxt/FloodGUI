@@ -133,7 +133,10 @@ return function(source, iconNames)
 		end,
 	}, { __index = getfenv() })
 	-- Expose the real window methods to a small synthetic window, not production.
-	source = source:gsub("return f%s*$", "f._testWindow = g; f._testTab = j; f._testControl = n; return f")
+	source = source:gsub(
+		"return f%s*$",
+		"f._testWindow = g; f._testTab = j; f._testControl = n; f._testParent = ag; return f"
+	)
 	local chunk = assert(loadstring(source))
 	setfenv(chunk, env)
 	local library = chunk()
@@ -304,7 +307,20 @@ return function(source, iconNames)
 			self.Parent = nil
 		end
 		table.insert(objects, object)
-		return object
+		return setmetatable(object, {
+			__newindex = function(target, key, value)
+				if key == "Parent" then
+					local parent = value
+					while parent do
+						if parent.protected then
+							error("The current thread cannot access 'Instance' (lacking capability Plugin)")
+						end
+						parent = parent.Parent
+					end
+				end
+				rawset(target, key, value)
+			end,
+		})
 	end
 	env.Instance = { new = instance }
 	input.GetFocusedTextBox = function()
@@ -324,6 +340,38 @@ return function(source, iconNames)
 		_frameSteps = {},
 		_autoSave = function() end,
 	}, { __index = library._testWindow })
+	-- Reproduce the reported notification-parent failure, then exercise the real
+	-- notification constructor using the library's ordinary PlayerGui host.
+	local protectedHolder = instance("Frame")
+	protectedHolder.protected = true
+	local playerGui = instance("PlayerGui")
+	services.Players.LocalPlayer.WaitForChild = function(_, name)
+		assert(name == "PlayerGui")
+		return playerGui
+	end
+	env.gethui = function()
+		error("Protected UI must not be selected automatically")
+	end
+	assert(library._testParent() == playerGui)
+	widgetWindow.NotifyHolder, widgetWindow._notifyOrder = protectedHolder, 0
+	local notifyOK, notifyError = pcall(widgetWindow.Notify, widgetWindow, { Content = "test" })
+	assert(not notifyOK and tostring(notifyError):find("lacking capability Plugin", 1, true))
+	assert(objects[#objects].destroyed, "Failed notification instance must be cleaned up")
+	env.Rect = {
+		new = function(...)
+			return { ... }
+		end,
+	}
+	env.ColorSequence = {
+		new = function(...)
+			return { ... }
+		end,
+	}
+	widgetWindow.NotifyHolder = instance("Frame")
+	widgetWindow.NotifyHolder.Parent = library._testParent()
+	widgetWindow._toasts, widgetWindow.MaxNotifications = {}, 3
+	local toast = widgetWindow:Notify({ Content = "PlayerGui notification", Icon = "cherry" })
+	assert(toast and #widgetWindow._toasts == 1, "Ordinary callback must be able to create notification descendants")
 	local tab = setmetatable(
 		{ Window = widgetWindow, List = instance("Frame"), _order = 0 },
 		{ __index = library._testTab }

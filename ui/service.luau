@@ -36,6 +36,10 @@ function UI.window(id, title, subtitle, key)
 		UI.windows[id]:Destroy()
 	end
 	local window = Airflow:Window({
+		Parent = assert(
+			game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui", 10),
+			"FloodGUI requires the local PlayerGui"
+		),
 		Name = "FloodGUI_" .. id,
 		Title = title,
 		Subtitle = subtitle,
@@ -91,8 +95,16 @@ function UI.notify(message, kind)
 		end
 	end
 	if UI.notifications and window and not window._destroyed then
-		window:Notify({ Title = "FloodGUI", Content = tostring(message), Type = kind, Duration = 4 })
+		local ok, err = pcall(function()
+			window:Notify({ Title = "FloodGUI", Content = tostring(message), Type = kind, Duration = 4 })
+		end)
+		if not ok and not UI.notificationWarning then
+			UI.notificationWarning = true
+			warn("[FloodGUI] Notification unavailable; script will continue: " .. tostring(err))
+		end
+		return ok, err
 	end
+	return false
 end
 
 function UI.confirm(window, title, content, action)
