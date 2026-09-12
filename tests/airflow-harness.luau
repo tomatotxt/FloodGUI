@@ -55,6 +55,7 @@ return function(source, iconNames)
 		end,
 	}
 	local services = {
+		TweenService = {},
 		UserInputService = input,
 		Players = { LocalPlayer = {} },
 		HttpService = {
@@ -132,7 +133,7 @@ return function(source, iconNames)
 		end,
 	}, { __index = getfenv() })
 	-- Expose the real window methods to a small synthetic window, not production.
-	source = source:gsub("return f%s*$", "f._testWindow = g; return f")
+	source = source:gsub("return f%s*$", "f._testWindow = g; f._testTab = j; f._testControl = n; return f")
 	local chunk = assert(loadstring(source))
 	setfenv(chunk, env)
 	local library = chunk()
@@ -160,6 +161,348 @@ return function(source, iconNames)
 	assert(library:LoadFont())
 	assert(files["AirFlowFonts/ValleySans-Regular.ttf"] == response)
 	assert(library.Fonts.Regular ~= old)
+
+	-- Construct the real controls using a small deterministic Instance tree.
+	local objects, timers = {}, {}
+	local dimension = {}
+	local function dim(xs, xo, ys, yo)
+		return setmetatable({ X = { Scale = xs, Offset = xo }, Y = { Scale = ys, Offset = yo } }, dimension)
+	end
+	dimension.__add = function(a, b)
+		return dim(a.X.Scale + b.X.Scale, a.X.Offset + b.X.Offset, a.Y.Scale + b.Y.Scale, a.Y.Offset + b.Y.Offset)
+	end
+	dimension.__sub = function(a, b)
+		return dim(a.X.Scale - b.X.Scale, a.X.Offset - b.X.Offset, a.Y.Scale - b.Y.Scale, a.Y.Offset - b.Y.Offset)
+	end
+	env.UDim2 = {
+		new = dim,
+		fromOffset = function(x, y)
+			return dim(0, x, 0, y)
+		end,
+		fromScale = function(x, y)
+			return dim(x, 0, y, 0)
+		end,
+	}
+	env.TweenInfo = {
+		new = function()
+			return {}
+		end,
+	}
+	services.TweenService.Create = function(_, object, _, properties)
+		return {
+			Play = function()
+				for key, value in pairs(properties) do
+					object[key] = value
+				end
+			end,
+		}
+	end
+	env.task.defer = function(fn, ...)
+		local args = table.pack(...)
+		table.insert(queue, function()
+			fn(table.unpack(args, 1, args.n))
+		end)
+	end
+	env.task.delay = function(_, fn)
+		table.insert(timers, fn)
+	end
+	env.task.wait = function() end
+	local function flush()
+		while #queue > 0 do
+			table.remove(queue, 1)()
+		end
+	end
+	local function instance(class)
+		local object = {
+			ClassName = class,
+			Visible = true,
+			ZIndex = 1,
+			Image = "",
+			Text = "",
+			AbsoluteSize = vec(500, 100),
+			AbsolutePosition = vec(0, 0),
+			TextBounds = vec(35, 18),
+			attributes = {},
+			changes = {},
+		}
+		for _, event in ipairs({
+			"InputBegan",
+			"InputEnded",
+			"MouseEnter",
+			"MouseLeave",
+			"Activated",
+			"Focused",
+			"FocusLost",
+			"Destroying",
+		}) do
+			object[event] = signal()
+		end
+		function object:IsA(name)
+			return name == class
+				or (name == "GuiButton" and class == "TextButton")
+				or (
+					name == "GuiObject"
+					and (class == "Frame" or class == "TextButton" or class == "TextLabel" or class == "TextBox")
+				)
+		end
+		function object:GetChildren()
+			local children = {}
+			for _, item in ipairs(objects) do
+				if item.Parent == self then
+					table.insert(children, item)
+				end
+			end
+			return children
+		end
+		function object:GetDescendants()
+			local children = {}
+			for _, item in ipairs(self:GetChildren()) do
+				table.insert(children, item)
+				for _, child in ipairs(item:GetDescendants()) do
+					table.insert(children, child)
+				end
+			end
+			return children
+		end
+		function object:FindFirstChild(name)
+			for _, child in ipairs(self:GetChildren()) do
+				if child.Name == name then
+					return child
+				end
+			end
+		end
+		function object:SetAttribute(name, value)
+			self.attributes[name] = value
+		end
+		function object:GetAttribute(name)
+			return self.attributes[name]
+		end
+		function object:GetPropertyChangedSignal(name)
+			self.changes[name] = self.changes[name] or signal()
+			return self.changes[name]
+		end
+		function object:IsFocused()
+			return input.focused == self
+		end
+		function object:CaptureFocus()
+			input.focused = self
+			self.Focused:Fire()
+		end
+		function object:ReleaseFocus()
+			input.focused = nil
+			self.FocusLost:Fire(false)
+		end
+		function object:Destroy()
+			if self.destroyed then
+				return
+			end
+			self.destroyed = true
+			self.Destroying:Fire()
+			for _, child in ipairs(self:GetChildren()) do
+				child:Destroy()
+			end
+			self.Parent = nil
+		end
+		table.insert(objects, object)
+		return object
+	end
+	env.Instance = { new = instance }
+	input.GetFocusedTextBox = function()
+		return input.focused
+	end
+	local widgetWindow = setmetatable({
+		Open = true,
+		_introDone = true,
+		Scale = { Scale = 1 },
+		Gui = instance("ScreenGui"),
+		Body = instance("Frame"),
+		Root = instance("Frame"),
+		BodyStroke = {},
+		Shadow = {},
+		_inputListeners = { Began = {}, Changed = {}, Ended = {}, Render = {}, Cancel = {} },
+		_connections = {},
+		_frameSteps = {},
+		_autoSave = function() end,
+	}, { __index = library._testWindow })
+	local tab = setmetatable(
+		{ Window = widgetWindow, List = instance("Frame"), _order = 0 },
+		{ __index = library._testTab }
+	)
+	local function fire(event, ...)
+		for _, listener in ipairs(table.clone(widgetWindow._inputListeners[event])) do
+			listener(...)
+		end
+	end
+	local changed = 0
+	local toggle = tab:Toggle({
+		Name = "Test",
+		Flag = "lifecycle-test",
+		Callback = function()
+			changed += 1
+		end,
+	})
+	toggle:Set(true)
+	assert(toggle:Get() and changed == 1)
+	toggle:SetDisabled(true, "Test unavailable")
+	toggle:Set(false)
+	toggle._frame.Activated:Fire()
+	assert(toggle:Get() and changed == 1, "disabled toggle cannot mutate")
+	toggle:Set(false, true)
+	assert(not toggle:Get() and changed == 1, "silent state sync still works while disabled")
+	local pointer = { UserInputType = enum.UserInputType.Touch }
+	local presses, releases = 0, 0
+	local hold = tab:Hold({
+		Name = "Hold",
+		Press = function()
+			presses += 1
+		end,
+		Release = function()
+			releases += 1
+		end,
+	})
+	hold._frame.InputBegan:Fire(pointer)
+	flush()
+	assert(presses == 1)
+	hold:SetDisabled(true)
+	assert(releases == 1, "disabling an active hold releases it immediately")
+	hold:SetDisabled(false)
+	fire("Ended", pointer)
+	assert(releases == 1, "hold release is exact once")
+	hold._frame.InputBegan:Fire(pointer)
+	widgetWindow:Toggle(false)
+	flush()
+	assert(presses == 1 and releases == 2, "hide before queued press cancels it")
+	widgetWindow:Toggle(true)
+
+	local dropdownChanges = 0
+	local dropdown = tab:Dropdown({
+		Name = "Files",
+		Options = { "A", "B" },
+		Callback = function()
+			dropdownChanges += 1
+		end,
+	})
+	dropdown:SetOpen(true)
+	flush()
+	local optionButton
+	for _, child in ipairs(dropdown._frame:GetDescendants()) do
+		if child.ClassName == "TextLabel" and child.Text == "A" then
+			optionButton = child.Parent
+		end
+	end
+	assert(optionButton)
+	optionButton.Activated:Fire()
+	assert(dropdown:Get() == "A" and dropdownChanges == 1)
+	dropdown:SetOpen(true)
+	dropdown:SetDisabled(true)
+	optionButton.Activated:Fire()
+	dropdown:SetOpen(true)
+	assert(
+		not dropdown.Open and dropdown:Get() == "A" and dropdownChanges == 1,
+		"disabled dropdown closes and rejects stale clicks"
+	)
+	dropdown:SetDisabled(false)
+	dropdown:Refresh({ "B" }, true)
+	dropdown:Refresh({ "A", "B" }, true)
+	assert(dropdown:Get() == nil, "removed selection cannot resurrect when options return")
+
+	local binds = 0
+	local keybind = tab:Keybind({
+		Name = "Key",
+		Default = enum.KeyCode.J,
+		Callback = function()
+			binds += 1
+		end,
+	})
+	local keyButton
+	for _, child in ipairs(keybind._frame:GetChildren()) do
+		if child.ClassName == "TextButton" then
+			keyButton = child
+		end
+	end
+	local key = { UserInputType = enum.UserInputType.Keyboard, KeyCode = enum.KeyCode.J }
+	keyButton.Activated:Fire()
+	assert(keybind.Listening)
+	widgetWindow._inLayer, widgetWindow._outLayer = instance("Frame"), instance("Frame")
+	widgetWindow.Content, widgetWindow.Indicator, widgetWindow.Compact = instance("Frame"), instance("Frame"), true
+	widgetWindow:SelectTab({ _button = {}, _stroke = {}, _label = {}, _page = instance("Frame") })
+	assert(not keybind.Listening, "switching tabs clears key capture")
+	input.focused = {}
+	fire("Began", key, false)
+	assert(binds == 0, "typing suppresses shortcuts even if executor omits processed flag")
+	input.focused = nil
+	fire("Began", key, false)
+	assert(binds == 1)
+	keyButton.Activated:Fire()
+	keybind:SetDisabled(true)
+	assert(not keybind.Listening)
+	fire("Began", key, false)
+	assert(binds == 1, "disabled keybind is inert")
+	keybind:SetDisabled(false)
+
+	local confirms, cancels = 0, 0
+	local function confirm()
+		return widgetWindow:Confirm({
+			Title = "Delete?",
+			Callback = function()
+				confirms += 1
+			end,
+			OnCancel = function()
+				cancels += 1
+			end,
+		})
+	end
+	confirm()
+	local confirmButton, cancelButton
+	for _, child in ipairs(widgetWindow.Body:GetDescendants()) do
+		if child.ClassName == "TextLabel" then
+			if child.Text == "Confirm" then
+				confirmButton = child.Parent
+			end
+			if child.Text == "Cancel" then
+				cancelButton = child.Parent
+			end
+		end
+	end
+	fire("Began", key, false)
+	assert(binds == 1, "modal dialog suppresses shortcuts")
+	confirmButton.Activated:Fire()
+	confirmButton.Activated:Fire()
+	cancelButton.Activated:Fire()
+	assert(confirms == 1 and cancels == 0, "confirmation resolves once during fade-out")
+	local staleCalls = 0
+	local disposable = library._testControl(tab, {}, {}, instance("Frame"), "Test")
+	widgetWindow:_listen("Render", function()
+		disposable:Destroy()
+	end)
+	widgetWindow:_listen("Render", function()
+		staleCalls += 1
+	end, disposable)
+	fire("Render")
+	assert(staleCalls == 0, "destroy during event dispatch invalidates already-copied listeners")
+
+	-- Cleanup must continue after a callback fails and must not retain dead controls.
+	local cleanup = 0
+	table.insert(toggle._listeners, function()
+		error("deliberate cleanup failure")
+	end)
+	table.insert(toggle._listeners, function()
+		cleanup += 1
+	end)
+	toggle:Destroy()
+	assert(cleanup == 1 and toggle._frame.destroyed and library.Flags["lifecycle-test"] == nil)
+	assert(not table.find(widgetWindow.Controls, toggle), "destroyed control removed from window registry")
+	toggle:SetDisabled(false)
+	local remaining = table.clone(widgetWindow.Controls)
+	widgetWindow:Destroy()
+	for _, control in ipairs(remaining) do
+		assert(control._destroyed, "window destroys every control without array skipping")
+	end
+	assert(#widgetWindow._inputListeners.Began == 0 and widgetWindow.Gui.destroyed)
+	assert(widgetWindow:Dialog({ Title = "Too late" }) == nil)
+	print(
+		"PASS: actual Airflow controls disabled/silent sync, hold/key capture cancellation, dropdown refresh, exact-once dialogs, resilient cleanup"
+	)
 
 	local children = {}
 	local body = {

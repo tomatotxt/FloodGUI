@@ -1,7 +1,7 @@
 -- Shared presentation for the main menu, creator, and player.
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
 local existing = getgenv().FloodGUIUI
-if existing and existing.runtime == Runtime then
+if existing and existing.runtime == Runtime and not existing.destroyed then
 	return existing
 end
 if existing then
@@ -48,6 +48,11 @@ function UI.window(id, title, subtitle, key)
 		MaxNotifications = 3,
 	})
 	UI.windows[id] = window
+	window.Gui.Destroying:Connect(function()
+		if UI.windows[id] == window then
+			UI.windows[id] = nil
+		end
+	end)
 	-- Keep each session's reopen button reachable when several windows are active.
 	if window.OpenButton then
 		local row = ({ main = 0, creator = 1, creatorControls = 2, player = 3 })[id] or 0
@@ -74,6 +79,16 @@ end
 
 function UI.notify(message, kind)
 	local window = UI.windows.main
+	if not window or window._destroyed then
+		for _, candidate in pairs(UI.windows) do
+			if not candidate._destroyed then
+				window = candidate
+				if candidate.Open then
+					break
+				end
+			end
+		end
+	end
 	if UI.notifications and window and not window._destroyed then
 		window:Notify({ Title = "FloodGUI", Content = tostring(message), Type = kind, Duration = 4 })
 	end
@@ -102,8 +117,15 @@ function UI.hold(tab, name, description, press, release, track)
 end
 
 function UI.destroy()
-	for _, window in pairs(UI.windows) do
-		window:Destroy()
+	if UI.destroyed then
+		return
+	end
+	UI.destroyed = true
+	for _, window in pairs(table.clone(UI.windows)) do
+		local ok, message = pcall(window.Destroy, window)
+		if not ok then
+			warn("[FloodGUI] Window cleanup: " .. tostring(message))
+		end
 	end
 	UI.windows = {}
 end
@@ -111,6 +133,9 @@ end
 -- Try custom fonts in the background, then update the windows already created.
 task.spawn(function()
 	local ok, loaded = pcall(Airflow.LoadFont, Airflow, { Name = "ValleySans", Folder = Runtime.path("Fonts") })
+	if UI.destroyed then
+		return
+	end
 	UI.font = ok and loaded and "ValleySans" or "BuilderSans"
 	if not (ok and loaded) then
 		return

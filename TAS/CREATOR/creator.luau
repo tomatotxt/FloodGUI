@@ -2,9 +2,11 @@ local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader
 getgenv().TAS_Active = true
 
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
+local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
+local Buffer = Runtime.run("TAS/CREATOR/recording-buffer.luau")
 local UI_API_PATH = "ui/creator.luau"
 
-print("TAS Creator: Ultimate Edition Loaded")
+print("FloodGUI TAS Creator loaded")
 
 -- // NEW CONFIGURATIONS //
 getgenv().ExtremeSmoothing = false
@@ -68,13 +70,14 @@ local function SendAlert(msg, color)
     end
 end
 
-SendAlert("Ultimate TAS Creator Initialized", Color3.fromRGB(183, 0, 255))
+SendAlert("FloodGUI TAS Creator Initialized", Color3.fromRGB(238, 58, 48))
 
 -- // BYPASSES //
+if not getgenv().FloodGUICreatorHookApplied then
 local OldIndex
 OldIndex = hookmetamethod(game, "__index", function(self, key)
     if not checkcaller() then
-        if key == "Archivable" then return false end
+        if getgenv().TAS_Active and key == "Archivable" then return false end
         -- Updated: Position spoofing will now respect getgenv().TAS_Active, getgenv().EnableAutoSwim, and getgenv().PauseSpoofing
         if getgenv().TAS_Active and getgenv().EnableAutoSwim and getgenv().IsSwimming and not getgenv().PauseSpoofing and key == "Position" and self.Name == "HumanoidRootPart" then
             return Vector3.new(-23, -153, 0)
@@ -82,6 +85,8 @@ OldIndex = hookmetamethod(game, "__index", function(self, key)
     end
     return OldIndex(self, key)
 end)
+getgenv().FloodGUICreatorHookApplied = true
+end
 
 pcall(function() ReplicatedStorage.Remote.ReqPasskey:InvokeServer() end)
 
@@ -99,6 +104,7 @@ local AnimEnv
 local RunStart
 local SavedVelocity = Vector3.new(0, 0, 0)
 local Connections = {}
+local Stopped = false
 
 -- Flags
 local IsPreviewingForward = false
@@ -107,6 +113,7 @@ local IsAdvancingFrame = false
 local IsRewinding = false
 local IsViewingTAS = false
 local AutoSaved = false
+local LastAutoSaveAttempt = -math.huge
 local AutoResetEnv = false
 
 -- Recorder & Map
@@ -176,7 +183,10 @@ local function UnpackFrame(data)
 end
 
 -- // HELPER FUNCTIONS //
-local function AddConnection(con) table.insert(Connections, con); return con end
+local function AddConnection(con)
+    if Stopped then con:Disconnect() else table.insert(Connections, con) end
+    return con
+end
 
 local function isRandomString(str)
     if #str == 0 then return false end
@@ -293,8 +303,12 @@ end
 
 local function SaveRecording(name, frames)
     local actualMap = ClonedMap and ClonedMap:FindFirstChild("Settings")
-    local path = Recordings.save(name, frames, {author = LocalPlayer.Name, fps = TARGET_FPS,
+    local saved, path = pcall(Recordings.save, name, frames, {author = LocalPlayer.Name, fps = TARGET_FPS,
         mapName = actualMap and actualMap:GetAttribute("MapName") or name})
+    if not saved then
+        SendAlert("Recording was not saved: " .. tostring(path) .. ". Your frames are still in the creator.", Color3.fromRGB(255,106,96))
+        return nil
+    end
     SendAlert("Saved binary: " .. path, Color3.fromRGB(0, 255, 0))
     return path
 end
@@ -316,7 +330,9 @@ local function RefreshFileList()
 end
 
 -- // CORE LOGIC / FORWARD DECLARATIONS //
-local TogglePause, AddSavestate, RemoveSavestate, LoadLastSavestate, RewindFrame, StepForward, PlaybackTAS, ResetToNormal, RewindLoop, FrameAdvanceLoop
+local TogglePause, AddSavestate, RemoveSavestate, LoadLastSavestate, RewindFrame, StepForward, PlaybackTAS, ResetToNormal, RewindLoop, FrameAdvanceLoop, Noclip
+local StepInProgress = false
+local StopPreview
 local ReleaseTouchControls
 local CreatorActions = {}
 
@@ -393,10 +409,7 @@ local function BindUI()
     -- Files
     BindButton("SaveRun", function()
         local name = (UI_Elements.SaveBox and UI_Elements.SaveBox.Text ~= "") and UI_Elements.SaveBox.Text or (ClonedMap and ClonedMap.Settings:GetAttribute("MapName") or "MyRun")
-        if not isfolder(Runtime.root .. "/TAS FILES") then makefolder(Runtime.root .. "/TAS FILES") end
-        SaveRecording(name, CompileTASData())
-        SendAlert("Saved as " .. name, Color3.fromRGB(0, 255, 0))
-        RefreshFileList()
+        if SaveRecording(name, CompileTASData()) then RefreshFileList() end
     end)
     BindButton("RefreshList", RefreshFileList)
     BindButton("LoadRun", function()
@@ -617,7 +630,9 @@ end
 
 -- // CLEANUP //
 function ResetToNormal()
-    if not getgenv().TAS_Active then return end
+    if Stopped then return end
+    Stopped = true
+    if StopPreview then StopPreview(false) end
     if ReleaseTouchControls then ReleaseTouchControls() end
     IsRewinding, IsAdvancingFrame, IsPreviewingForward, IsPreviewingBackward, IsViewingTAS = false, false, false, false, false
     getgenv().TAS_Active = false
@@ -681,26 +696,29 @@ function ResetToNormal()
     pcall(function() LocalPlayer.Character:BreakJoints() end)
     SendAlert("TAS Creator Stopped", Color3.fromRGB(255, 0, 0))
 end
+getgenv().FloodGUIStopCreator = ResetToNormal
 
 -- // CORE LOGIC IMPLEMENTATIONS //
 function TogglePause()
-    local pause = task.spawn(function()
+        if Stopped or IsViewingTAS or not RunStart then return end
+        local character = LocalPlayer.Character
+        local Root = character and character:FindFirstChild("HumanoidRootPart")
+        if not Root then return end
         IsPaused = not IsPaused
-        local Root = LocalPlayer.Character.HumanoidRootPart
         if IsPaused then
             SavedVelocity = Root.Velocity; Root.Anchored = true; PauseStart = os.clock()
             if StatusLabel then StatusLabel.Text = "PAUSED"; StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 80) end
             SendAlert("Paused", Color3.fromRGB(255, 255, 0))
         else
-            Root.Anchored = false; Root.Velocity = SavedVelocity; TimeOffset = TimeOffset + os.clock() - PauseStart
+            Root.Anchored = false; Root.Velocity = SavedVelocity; TimeOffset = TimeOffset + os.clock() - (PauseStart or os.clock())
             if StatusLabel then StatusLabel.Text = "PLAYING"; StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255) end
             RecordAccumulator = 0
             SendAlert("Unpaused", Color3.fromRGB(0, 255, 0))
         end
-    end)
 end
 
 function LoadLastSavestate()
+    if Stopped or IsViewingTAS or StepInProgress then return end
     local LastState = Savestates[#Savestates]
     if LastState then
         local FramePacked = LastState[#LastState]
@@ -726,12 +744,17 @@ function LoadLastSavestate()
 end
 
 function AddSavestate()
+    if Stopped or IsViewingTAS or StepInProgress or #Frames == 0 then
+        SendAlert("Record at least one new frame before adding a savestate", Color3.fromRGB(255,170,0))
+        return
+    end
     table.insert(Savestates, Frames); Frames = {}
     SendAlert("Savestate Added (" .. #Savestates .. ")", Color3.fromRGB(0, 255, 0))
 end
 
 local RemoveConfirm = false; local RemoveConfirmTime = 0
 function RemoveSavestate()
+    if Stopped or IsViewingTAS or StepInProgress then return end
     if not RemoveConfirm or (os.clock() - RemoveConfirmTime > 2) then
         RemoveConfirm = true; RemoveConfirmTime = os.clock()
         SendAlert("Press again to remove last state", Color3.fromRGB(255, 170, 0))
@@ -746,7 +769,7 @@ function RemoveSavestate()
     end
 end
 
-local function Noclip(Toggle)
+function Noclip(Toggle)
     local char = LocalPlayer.Character
     if char then
         for i, v in char:GetChildren() do if v:IsA("BasePart") then v.CanCollide = not Toggle end end
@@ -774,7 +797,12 @@ local function SetupMap()
                 end))
             end
         end
-        repeat task.wait() until target; LiveMap.PrimaryPart = target
+        local deadline = os.clock() + 15
+        repeat task.wait() until target or Stopped or not LiveMap.Parent or os.clock() >= deadline
+        for _, con in ipairs(connections) do con:Disconnect() end
+        if Stopped then return end
+        assert(target, "Could not find the map spawn; creator setup stopped")
+        LiveMap.PrimaryPart = target
     else
         LiveMap.PrimaryPart = Spawn
     end
@@ -826,9 +854,9 @@ local function SetupMap()
             end
         end
 
-        table.insert(Recorders, Part.Changed:Connect(OnChange))
+        table.insert(Recorders, AddConnection(Part.Changed:Connect(OnChange)))
 
-        table.insert(Recorders, Part.Destroying:Connect(function()
+        table.insert(Recorders, AddConnection(Part.Destroying:Connect(function()
             if not Recording then return end
             local State = DeepCopy(MapRecorderCache[Part])
             local ChildrenUUIDs = {}; local ChildrenStates = {}
@@ -841,11 +869,11 @@ local function SetupMap()
                 end
             end
             table.insert(MapEvents, {Time = os.clock() - StartTime, UUID = id, Prop = "Destroyed", OldVal = State, Children = ChildrenStates, ChildrenUUIDs = ChildrenUUIDs, NewVal = true})
-        end))
+        end)))
     end
 
     for _, Object in ipairs(LiveMap:GetDescendants()) do if Object:IsA("BasePart") or Object:IsA("Decal") or Object:IsA("Texture") then TrackPart(Object) end end
-    table.insert(Recorders, LiveMap.DescendantAdded:Connect(function(d) if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then TrackPart(d) end end))
+    table.insert(Recorders, AddConnection(LiveMap.DescendantAdded:Connect(function(d) if d:IsA("BasePart") or d:IsA("Decal") or d:IsA("Texture") then TrackPart(d) end end)))
 
     SendAlert("Scanning for Buttons...", Color3.fromRGB(255, 170, 0))
     Hum.Health = 99999 -- God Mode
@@ -865,7 +893,7 @@ local function SetupMap()
     SendAlert("Commencing Auto Farm", Color3.fromRGB(255, 170, 0))
 
     Noclip(true)
-    local GodModeCon = RunService.RenderStepped:Connect(function() if Hum then Hum.Health = 99999 end end)
+    local GodModeCon = AddConnection(RunService.RenderStepped:Connect(function() if Hum and Hum.Parent then Hum.Health = 99999 end end))
 
     local LastSafePos = CFrame.new(0, 1000, 0)
     local LiveExitRegion = nil
@@ -927,6 +955,7 @@ local function SetupMap()
     SendAlert("Recording Finished", Color3.fromRGB(255, 0, 0))
     Noclip(false)
     for _, r in ipairs(Recorders) do r:Disconnect() end
+    if Stopped then return end
 
     CaptureLighting(); SendAlert("Processing Map...", Color3.fromRGB(0, 200, 255))
     if LiveMap then LiveMap.Archivable = true; LiveMap:Destroy() end
@@ -956,6 +985,7 @@ local function SetupMap()
     LocalPlayer.Character:BreakJoints()
     SendAlert("Respawning...", Color3.fromRGB(255, 255, 0))
     LocalPlayer.CharacterAdded:Wait(); Char = LocalPlayer.Character; task.wait(1)
+    if Stopped then return end
     game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("RemoveWaiting"):FireServer()
 
     local FE2Env = getsenv(Char:WaitForChild("FE2_Character"))
@@ -963,7 +993,11 @@ local function SetupMap()
     if RopeTable and #RopeTable >= 1 then
         SendAlert("Zipline Data Restored", Color3.fromRGB(0, 255, 255))
         task.spawn(function()
-            while Char and Char.Humanoid.Health >= 1 do setupvalue(startZipline, 2, RopeTable); task.wait() end
+            while not Stopped and Char and Char.Parent and Char.Humanoid.Health >= 1 do
+                local worked = pcall(setupvalue, startZipline, 2, RopeTable)
+                if not worked then SendAlert("Zipline restoration disabled: game internals changed", Color3.fromRGB(255,170,0)); break end
+                task.wait()
+            end
         end)
     end
 
@@ -1110,10 +1144,19 @@ end
 
 -- // FAST FORWARD / REWIND PLAYER //
 function StepForward()
-    if not IsPaused then return end
-    local InitialFrames = #Frames; TogglePause(); RecordAccumulator = RECORD_INTERVAL + 0.1
-    repeat RunService.Heartbeat:Wait(); if IsRewinding then break end until #Frames > InitialFrames
-    if not IsPaused then TogglePause() end
+    if Stopped or StepInProgress or IsViewingTAS or not IsPaused or not RunStart then return end
+    StepInProgress = true
+    local InitialFrames = #Frames
+    TogglePause()
+    RecordAccumulator = RECORD_INTERVAL
+    local deadline = os.clock() + 2
+    repeat
+        RunService.Heartbeat:Wait()
+        local character = LocalPlayer.Character
+        if Stopped or IsRewinding or not character or not character:FindFirstChild("HumanoidRootPart") then break end
+    until #Frames > InitialFrames or os.clock() >= deadline
+    if not Stopped and not IsPaused then TogglePause() end
+    StepInProgress = false
 end
 
 function FrameAdvanceLoop()
@@ -1128,9 +1171,10 @@ function FrameAdvanceLoop()
 end
 
 function RewindFrame()
-    if LocalPlayer.Character then
-        local FramePacked = Frames[#Frames - 1]
-        if not FramePacked and #Savestates > 0 then local PrevState = Savestates[#Savestates]; FramePacked = PrevState[#PrevState - 1] end
+    if Stopped or IsViewingTAS or StepInProgress then return end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local FramePacked
+        Frames, FramePacked = Buffer.rewind(Savestates, Frames)
         if FramePacked then
             local Frame = UnpackFrame(FramePacked)
             if not IsPaused then TogglePause() end
@@ -1147,7 +1191,6 @@ function RewindFrame()
             if Frame.Animation[1] == "walk" then AnimEnv.setAnimationSpeed(0.76) end
 
             task.spawn(function() UpdateTimeDisplay(VisualTime) end)
-            Frames[#Frames] = nil
         end
     end
 end
@@ -1155,7 +1198,7 @@ end
 function RewindLoop()
     if IsAdvancingFrame then return end
     IsRewinding = true; SendAlert("Rewinding...", Color3.fromRGB(255, 0, 0))
-    RewindFrame(); while task.wait(0.05) and IsRewinding do RewindFrame() end
+    RewindFrame(); while task.wait(0.05) and IsRewinding and not Stopped do RewindFrame() end
 end
 
 -- // VIEW TAS (IMPROVED PLAYER LOGIC) //
@@ -1193,6 +1236,12 @@ local function ActivateTASAnimation(AnimData)
 end
 
 function PlaybackTAS(Data)
+    if Stopped or IsViewingTAS or StepInProgress then return end
+    if type(Data) ~= "table" or #Data == 0 then
+        SendAlert("Record or load at least one frame before previewing", Color3.fromRGB(255,170,0))
+        return
+    end
+    if not IsPaused then TogglePause() end
     IsViewingTAS = true
     SendAlert("Viewing TAS Preview", Color3.fromRGB(183, 0, 255))
 
@@ -1211,6 +1260,7 @@ function PlaybackTAS(Data)
 
     local Root = LocalPlayer.Character.HumanoidRootPart
     local Cam = workspace.CurrentCamera
+    local returnPose, returnVelocity, returnCamera = Root.CFrame, SavedVelocity, Cam.CFrame
     local Offset = ClonedMap.PrimaryPart.Position - Vector3.new(0, 1000, 0)
 
     local OldFrame = 1
@@ -1236,10 +1286,28 @@ function PlaybackTAS(Data)
     end
 
     local Con
+    local previewEnded = false
+    local finalFrameShown = false
+    StopPreview = function(completed)
+        if previewEnded then return end
+        previewEnded = true
+        IsViewingTAS = false
+        if Con then Con:Disconnect() end
+        if Root and Root.Parent then
+            Root.CFrame, Root.Velocity, Root.Anchored = returnPose, returnVelocity, true
+        end
+        if Cam and Cam.Parent then Cam.CFrame = returnCamera end
+        ToggleTASSlide(false)
+        for _, line in ipairs(PathLines) do line:Destroy() end
+        PathLines = {}
+        StopPreview = nil
+        if completed and not Stopped then
+            SendAlert("TAS preview finished; recording position restored", Color3.fromRGB(0, 255, 0))
+        end
+    end
     Con = RunService.Heartbeat:Connect(function()
-        if not IsViewingTAS then
-            Con:Disconnect(); Root.Anchored = true; ToggleTASSlide(false)
-            for _, line in ipairs(PathLines) do line:Destroy() end; PathLines = {}
+        if not IsViewingTAS or Stopped or not Root.Parent or LocalPlayer.Character ~= Root.Parent or finalFrameShown then
+            StopPreview(finalFrameShown)
             return
         end
         Root.Anchored = true
@@ -1248,18 +1316,8 @@ function PlaybackTAS(Data)
         UpdateMapState(Elapsed)
         SyncButtonState(Elapsed, Elapsed)
 
-        while OldFrame < #Data and Data[OldFrame + 1].time <= Elapsed do OldFrame = OldFrame + 1 end
-
-        if OldFrame >= #Data then
-            IsViewingTAS = false; Con:Disconnect(); Root.Anchored = true; ToggleTASSlide(false)
-            for _, line in ipairs(PathLines) do line:Destroy() end; PathLines = {}
-            SendAlert("TAS Preview Finished", Color3.fromRGB(0, 255, 0))
-            if not IsPaused then TogglePause() end
-            return
-        end
-
-        local FA = Data[OldFrame]; local FB = Data[OldFrame + 1] or FA
-        local Dur = FB.time - FA.time; local Alpha = (Dur > 0) and math.clamp((Elapsed - FA.time) / Dur, 0, 1) or 0
+        local FA, FB, Alpha, nextFrame, atEnd = Timeline.sample(Data, Elapsed, OldFrame)
+        OldFrame = nextFrame
 
         local cfA = NewC(unpack(FA.CCFrame, 1, 3)) * AngC(unpack(FA.CCFrame, 4, 6))
         local cfB = NewC(unpack(FB.CCFrame, 1, 3)) * AngC(unpack(FB.CCFrame, 4, 6))
@@ -1273,7 +1331,8 @@ function PlaybackTAS(Data)
             local camB = NewC(unpack(FB.CCameraCFrame, 1, 3)) * AngC(unpack(FB.CCameraCFrame, 4, 6))
             Cam.CFrame = camA:Lerp(camB, Alpha) + Offset
         end
-        ActivateTASAnimation(FA.AAnimation)
+        pcall(ActivateTASAnimation, FA.AAnimation)
+        finalFrameShown = atEnd
     end)
     AddConnection(Con)
 end
@@ -1326,14 +1385,26 @@ end))
 task.spawn(function()
     local RopeEvent = game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("UpdRopeData")
     if RopeEvent then
-        RopeEvent.OnClientEvent:Connect(function(val) if type(val) == "table" and not ClonedMap then RopeTable = val end end)
+        AddConnection(RopeEvent.OnClientEvent:Connect(function(val) if type(val) == "table" and not ClonedMap then RopeTable = val end end))
     end
 end)
 
-game.Workspace.Multiplayer:WaitForChild("NewMap", 9e99)
-game.Workspace.Multiplayer:WaitForChild("Map", 9e99)
-repeat task.wait() until LocalPlayer.Character.HumanoidRootPart.Anchored == false
-SetupMap()
+local multiplayer = game.Workspace.Multiplayer
+repeat task.wait(0.1) until Stopped or multiplayer:FindFirstChild("NewMap") or multiplayer:FindFirstChild("Map")
+repeat task.wait(0.1) until Stopped or multiplayer:FindFirstChild("Map")
+repeat
+    task.wait()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+until Stopped or (root and not root.Anchored)
+if Stopped then return end
+local setupOK, setupError = pcall(SetupMap)
+if not setupOK then
+    SendAlert("Creator setup failed: " .. tostring(setupError), Color3.fromRGB(255,106,96))
+    ResetToNormal()
+    return
+end
+if Stopped then return end
 
 -- // HEARTBEAT LOOP //
 local LastHeartbeat = os.clock()
@@ -1343,7 +1414,9 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
     EnforceLighting()
 
     if not RunStart then return end
-    if IsViewingTAS or IsRewinding or IsAdvancingFrame then return end
+    if IsViewingTAS or IsRewinding then return end
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") or not workspace.CurrentCamera then return end
 
     if IsPreviewingForward then PreviewOffset = PreviewOffset + (dt * 5) end
     if IsPreviewingBackward then PreviewOffset = PreviewOffset - (dt * 5) end
@@ -1360,7 +1433,7 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
         CamMode=getgenv().PlaybackCamera, EnvSync=AutoResetEnv, AutoSwim=getgenv().EnableAutoSwim,
         EnvPause=EnvPaused, AutoSave=getgenv().AutoSaveOnExit})
     if UI_Elements.SavestatesCount then UI_Elements.SavestatesCount.Text = "States: " .. tostring(#Savestates) end
-    if UI_Elements.FrameCount then UI_Elements.FrameCount.Text = "Frames: " .. tostring(#Frames) end
+    if UI_Elements.FrameCount then UI_Elements.FrameCount.Text = "Frames: " .. tostring(Buffer.count(Savestates, Frames)) end
 
     if PreviewOffset > 0.1 then TimeText.TextColor3 = Color3.fromRGB(0, 255, 0)
     elseif PreviewOffset < -0.1 then TimeText.TextColor3 = Color3.fromRGB(255, 0, 0)
@@ -1379,16 +1452,16 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
 
         if ClonedMap then
             local ExitRegion = ClonedMap:FindFirstChild("ExitRegion", true)
-            if getgenv().AutoSaveOnExit and ExitRegion and not AutoSaved then
+            if getgenv().AutoSaveOnExit and ExitRegion and not AutoSaved and os.clock() - LastAutoSaveAttempt >= 5 then
                 if IsPointInPart(ExitRegion, LocalPlayer.Character.HumanoidRootPart.CFrame.Position) then
-                    AutoSaved = true; SendAlert("Reached Exit - Auto Saving...", Color3.fromRGB(0, 255, 0))
+                    LastAutoSaveAttempt = os.clock()
+                    SendAlert("Reached Exit - Auto Saving...", Color3.fromRGB(0, 255, 0))
 
                     local Export = CompileTASData()
                     local name = ClonedMap.Settings:GetAttribute("MapName") or "AutoSaveRun"
                     if UI_Elements.SaveBox and UI_Elements.SaveBox.Text ~= "" then name = UI_Elements.SaveBox.Text end
-                    if not isfolder(Runtime.root .. "/TAS FILES") then makefolder(Runtime.root .. "/TAS FILES") end
-                    SaveRecording(name, Export)
-                    RefreshFileList()
+                    AutoSaved = SaveRecording(name, Export) ~= nil
+                    if AutoSaved then RefreshFileList() end
                 end
             end
         end
@@ -1447,8 +1520,9 @@ end)
 AddConnection(InputEndCon)
 
 local DiedCon = LocalPlayer.Character.Humanoid.Died:Connect(function()
+    if StopPreview then StopPreview(false) end
     task.wait(0.1); if not IsPaused then TogglePause() end
     LocalPlayer.CharacterAdded:Wait(); task.wait(0.1)
-    if ClonedMap and ClonedMap.Parent then LoadLastSavestate() end
+    if not Stopped and ClonedMap and ClonedMap.Parent then LoadLastSavestate() end
 end)
 AddConnection(DiedCon)

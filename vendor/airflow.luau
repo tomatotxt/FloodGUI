@@ -33,6 +33,7 @@ local function n(e, b, a, d, g)
 	a._type = g
 	a._frame = d
 	a._listeners = a._listeners or {}
+	a._cancelListeners = a._cancelListeners or {}
 	local c = e and e.Window
 	if c then
 		c.Controls = c.Controls or {}
@@ -57,8 +58,20 @@ local function n(e, b, a, d, g)
 		end
 	end
 	function a:SetDisabled(disabled, reason)
+		if self._destroyed then
+			return
+		end
+		local wasDisabled = self._disabled
 		self._disabled = disabled == true
+		if self._disabled and not wasDisabled then
+			for _, cancel in ipairs(table.clone(self._cancelListeners)) do
+				pcall(cancel)
+			end
+		end
 		if not d then
+			return
+		end
+		if not self._disabled and not self._blocker then
 			return
 		end
 		if not self._blocker then
@@ -96,15 +109,23 @@ local function n(e, b, a, d, g)
 			return
 		end
 		a._destroyed = true
-		for b, a in ipairs(a._listeners) do
-			a()
+		for _, cleanup in ipairs(table.clone(a._listeners)) do
+			local ok, message = pcall(cleanup)
+			if not ok then
+				warn("[Airflow] Control cleanup failed: " .. tostring(message))
+			end
 		end
 		a._listeners = {}
+		a._cancelListeners = {}
 		if b.Flag and f.Flags[b.Flag] == a then
 			f.Flags[b.Flag] = nil
 		end
 		if c then
 			c._controlsDirty = true
+			local index = table.find(c.Controls, a)
+			if index then
+				table.remove(c.Controls, index)
+			end
 		end
 		if d then
 			d:Destroy()
@@ -2141,6 +2162,9 @@ end
 local function p(a)
 	return a.UserInputType == Enum.UserInputType.MouseButton1 or a.UserInputType == Enum.UserInputType.Touch
 end
+local function isTyping()
+	return q:GetFocusedTextBox() ~= nil
+end
 local function N(a)
 	return a.UserInputType == Enum.UserInputType.MouseMovement or a.UserInputType == Enum.UserInputType.Touch
 end
@@ -2562,12 +2586,12 @@ function j:Hold(options)
 		k(options.Release)
 	end
 	control._frame.InputBegan:Connect(function(input)
-		if owner or control._disabled or not p(input) then
+		if owner or control._disabled or control._destroyed or not p(input) then
 			return
 		end
 		owner = input
 		task.spawn(function()
-			if owner == input then
+			if owner == input and not control._disabled and not control._destroyed then
 				k(options.Press)
 			end
 		end)
@@ -2902,8 +2926,14 @@ function j:Slider(g)
 		return f.Value
 	end
 	local ab
+	local function releaseDrag()
+		s = false
+		ab = nil
+		b(A, { Size = UDim2.fromOffset(12, 12) }, 0.2)
+		b(x, { Size = UDim2.fromOffset(28, 28), ImageTransparency = 0.85 }, 0.2)
+	end
 	local function U(a)
-		local b = math.clamp((a - u.AbsolutePosition.X) / u.AbsoluteSize.X, 0, 1)
+		local b = math.clamp((a - u.AbsolutePosition.X) / math.max(u.AbsoluteSize.X, 1), 0, 1)
 		f:Set(o + (D - o) * b)
 	end
 	O.InputBegan:Connect(function(a)
@@ -2922,17 +2952,11 @@ function j:Slider(g)
 	end, f)
 	self.Window:_listen("Ended", function(a)
 		if s and ownsPointer(ab, a) then
-			s = false
-			ab = nil
-			b(A, { Size = UDim2.fromOffset(12, 12) }, 0.2)
-			b(x, { Size = UDim2.fromOffset(28, 28), ImageTransparency = 0.85 }, 0.2)
+			releaseDrag()
 		end
 	end, f)
 	f.Value = S(f.Value)
-	self.Window:_listen("Cancel", function()
-		s = false
-		ab = nil
-	end, f)
+	self.Window:_listen("Cancel", releaseDrag, f)
 	T(0)
 	task.defer(H, true)
 	return n(self, g, f, y, "Slider")
@@ -3125,6 +3149,9 @@ function j:Dropdown(f)
 		return v + a * (L + 4) + 8
 	end
 	local function F(c)
+		if g._destroyed or (c and g._disabled) then
+			return
+		end
 		g.Open = c
 		t.Visible = #o > X
 		if not c then
@@ -3202,8 +3229,8 @@ function j:Dropdown(f)
 				m[a] = nil
 			end
 		end
-		for n, g in ipairs(o) do
-			local o = m[g]
+		for n, option in ipairs(o) do
+			local o = m[option]
 			if o then
 				o.Frame.LayoutOrder = n
 				continue
@@ -3233,7 +3260,7 @@ function j:Dropdown(f)
 			local l = d({
 				Position = UDim2.fromOffset(12, -1),
 				Size = UDim2.new(1, -36, 1, 0),
-				Text = tostring(g),
+				Text = tostring(option),
 				TextSize = 13,
 				TextColor3 = a.Muted,
 				TextTransparency = 1,
@@ -3241,34 +3268,37 @@ function j:Dropdown(f)
 			})
 			h.MouseEnter:Connect(function()
 				b(l, { TextColor3 = a.Text }, 0.15)
-				local c = m[g]
+				local c = m[option]
 				if c and c.Stroke then
 					b(c.Stroke, { Color = a.StrokeHover }, 0.12)
 				end
 			end)
 			h.MouseLeave:Connect(function()
-				b(l, { TextColor3 = j[g] and a.Text or a.Muted }, 0.2)
-				local c = m[g]
+				b(l, { TextColor3 = j[option] and a.Text or a.Muted }, 0.2)
+				local c = m[option]
 				if c and c.Stroke then
 					b(c.Stroke, { Color = a.Stroke }, 0.2)
 				end
 			end)
 			h.Activated:Connect(function()
-				if j[g] then
-					j[g] = nil
+				if g._disabled or g._destroyed or not g.Open then
+					return
+				end
+				if j[option] then
+					j[option] = nil
 				else
 					if not r then
 						j = {}
 					end
-					j[g] = true
+					j[option] = true
 				end
 				E()
 				k(f.Callback, D())
-				if not r and j[g] then
+				if not r and j[option] then
 					F(false)
 				end
 			end)
-			m[g] = { Frame = h, Label = l, Check = i, CheckScale = p, Stroke = nil, On = nil }
+			m[option] = { Frame = h, Label = l, Check = i, CheckScale = p, Stroke = nil, On = nil }
 		end
 		M()
 		if g.Open then
@@ -3294,9 +3324,18 @@ function j:Dropdown(f)
 		return D()
 	end
 	function g:Refresh(a, b)
+		if self._destroyed then
+			return
+		end
 		o = a or {}
 		if not b then
 			j = {}
+		else
+			for option in pairs(j) do
+				if not table.find(o, option) then
+					j[option] = nil
+				end
+			end
 		end
 		R()
 		E()
@@ -3320,24 +3359,22 @@ function j:Dropdown(f)
 	R()
 	E()
 	task.defer(P, true)
+	self.Window:_listen("Cancel", function()
+		if g.Open then
+			F(false)
+		end
+	end, g)
 	return n(self, f, g, p, "Dropdown")
 end
 function j:Input(f)
 	local l, p, t, q, r
-	f, l, p, t, q, r = z(
-		self,
-		f,
-		{
-			Title = "Name",
-			Description = "Desc",
-			PlaceholderText = "Placeholder",
-			CurrentValue = "Default",
-			Value = "Default",
-		},
-		"Frame",
-		160,
-		"Input"
-	)
+	f, l, p, t, q, r = z(self, f, {
+		Title = "Name",
+		Description = "Desc",
+		PlaceholderText = "Placeholder",
+		CurrentValue = "Default",
+		Value = "Default",
+	}, "Frame", 160, "Input")
 	local g = c("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -10, 0.5, 0),
@@ -3491,11 +3528,14 @@ function j:Keybind(g)
 		end
 	end
 	i.Activated:Connect(function()
+		if f._disabled or f._destroyed then
+			return
+		end
 		f.Listening = not f.Listening
 		l()
 	end)
 	self.Window:_listen("Began", function(a, b)
-		if a.UserInputType ~= Enum.UserInputType.Keyboard then
+		if a.UserInputType ~= Enum.UserInputType.Keyboard or isTyping() or self.Window._dialog then
 			return
 		end
 		if f.Listening then
@@ -3511,6 +3551,12 @@ function j:Keybind(g)
 		end
 		if not b and f.Value ~= nil and a.KeyCode == f.Value then
 			k(g.Callback, a.KeyCode)
+		end
+	end, f)
+	self.Window:_listen("Cancel", function()
+		if f.Listening then
+			f.Listening = false
+			l()
 		end
 	end, f)
 	l()
@@ -3689,6 +3735,9 @@ function j:ColorPicker(j)
 		return f.Value
 	end
 	local function P(a)
+		if f._destroyed or (a and f._disabled) then
+			return
+		end
 		f.Open = a
 		b(m, { Size = UDim2.new(1, 0, 0, a and u + 168 or u) }, 0.35, Enum.EasingStyle.Quint)
 		S:Set(a)
@@ -3768,6 +3817,11 @@ function j:ColorPicker(j)
 	self.Window:_listen("Cancel", function()
 		t = nil
 		ab = nil
+		b(v, { Size = UDim2.fromOffset(10, 10) }, 0.2)
+		b(x, { Size = UDim2.fromOffset(18, 5) }, 0.2)
+		if f.Open then
+			P(false)
+		end
 	end, f)
 	O(0)
 	return n(self, j, f, m, "ColorPicker")
@@ -5856,6 +5910,10 @@ function g:Tab(g, t)
 end
 g.CreateTab = g.Tab
 function g:Dialog(j)
+	if self._destroyed then
+		return
+	end
+	self:_cancelInput()
 	local s = "TextTransparency"
 	j = l(j, { Text = "Content", Message = "Content" })
 	if self._dialog then
@@ -6027,12 +6085,18 @@ function g:Dialog(j)
 			end
 		end)
 		f.Activated:Connect(function()
+			if r or self._destroyed then
+				return
+			end
 			p.Close()
 			k(j.Callback)
 		end)
 	end
 	if j.CloseOnBackdrop ~= false then
 		q.Activated:Connect(function()
+			if r or self._destroyed then
+				return
+			end
 			p.Close()
 			k(j.OnCancel)
 		end)
@@ -6062,12 +6126,30 @@ function g:Confirm(a)
 end
 function g:_listen(e, c, a)
 	local b = self._inputListeners[e]
-	table.insert(b, c)
+	local active = true
+	local function listener(...)
+		if active and (not a or (not a._destroyed and (e == "Cancel" or not a._disabled))) then
+			return c(...)
+		end
+	end
+	table.insert(b, listener)
+	if a and e == "Cancel" then
+		a._cancelListeners = a._cancelListeners or {}
+		table.insert(a._cancelListeners, listener)
+	end
 	local function d()
-		for a, d in ipairs(b) do
-			if d == c then
-				table.remove(b, a)
-				break
+		if not active then
+			return
+		end
+		active = false
+		local index = table.find(b, listener)
+		if index then
+			table.remove(b, index)
+		end
+		if a and e == "Cancel" then
+			index = table.find(a._cancelListeners, listener)
+			if index then
+				table.remove(a._cancelListeners, index)
 			end
 		end
 	end
@@ -6076,6 +6158,11 @@ function g:_listen(e, c, a)
 		table.insert(a._listeners, d)
 	end
 	return d
+end
+function g:_cancelInput()
+	for _, cancel in ipairs(table.clone(self._inputListeners.Cancel)) do
+		k(cancel)
+	end
 end
 function g:_indicatorY(a)
 	local b = self.TabList
@@ -6098,9 +6185,10 @@ function g:_placeIndicator(d)
 	b(a, { Position = UDim2.fromOffset(6, c), Size = UDim2.fromOffset(3, 18) }, 0.35, Enum.EasingStyle.Back)
 end
 function g:SelectTab(c)
-	if self.CurrentTab == c then
+	if self._destroyed or self.CurrentTab == c then
 		return
 	end
+	self:_cancelInput()
 	local d = self.CurrentTab
 	self.CurrentTab = c
 	self:_settleTransition()
@@ -6121,7 +6209,7 @@ function g:SelectTab(c)
 		c.Visible = true
 		b(c, { GroupTransparency = 1, Position = UDim2.fromOffset(0, -10) }, 0.18)
 		task.delay(0.18, function()
-			if self._transitionGeneration == f then
+			if not self._destroyed and self._transitionGeneration == f then
 				self:_settleOut()
 			end
 		end)
@@ -6140,7 +6228,7 @@ function g:SelectTab(c)
 	self._inPage = e
 	au(self._inLayer)
 	task.delay(0.32, function()
-		if self._transitionGeneration == f then
+		if not self._destroyed and self._transitionGeneration == f then
 			self:_settleIn()
 		end
 	end)
@@ -6168,7 +6256,7 @@ function g:_settleTransition()
 	self:_settleIn()
 end
 function g:Toggle(a)
-	if not self._introDone then
+	if self._destroyed or not self._introDone then
 		return
 	end
 	if a == nil then
@@ -6179,9 +6267,7 @@ function g:Toggle(a)
 	end
 	self.Open = a
 	if not a then
-		for _, cancel in ipairs(self._inputListeners.Cancel) do
-			pcall(cancel)
-		end
+		self:_cancelInput()
 	end
 	if a then
 		self.Root.Visible = true
@@ -6195,7 +6281,7 @@ function g:Toggle(a)
 		b(self.BodyStroke, { Transparency = 1 }, 0.12)
 		b(self.Shadow, { ImageTransparency = 1 }, 0.16)
 		task.delay(0.2, function()
-			if not self.Open then
+			if not self._destroyed and not self.Open then
 				self.Root.Visible = false
 			end
 		end)
@@ -6366,11 +6452,12 @@ function g:Destroy()
 		return
 	end
 	self._destroyed = true
-	for _, cancel in ipairs(self._inputListeners.Cancel) do
-		pcall(cancel)
-	end
-	for _, control in ipairs(self.Controls or {}) do
-		control:Destroy()
+	self:_cancelInput()
+	for _, control in ipairs(table.clone(self.Controls or {})) do
+		local ok, message = pcall(control.Destroy, control)
+		if not ok then
+			warn("[Airflow] Control disposal failed: " .. tostring(message))
+		end
 	end
 	self.Controls = {}
 	for a, b in ipairs(f.Windows) do

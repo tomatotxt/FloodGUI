@@ -9,7 +9,7 @@ return function(context)
 	local progress = playback:Progress({ Name = "Recording progress", Default = 0 })
 	local pause = playback:Toggle({
 		Name = "Pause playback",
-		Desc = "Pause takes effect after landing.",
+		Desc = "Pause immediately; resume from the same point.",
 		Default = false,
 		Callback = context.pause,
 	})
@@ -67,7 +67,7 @@ return function(context)
 	end, context.track)
 	manual:Paragraph({
 		Name = "Keyboard controls",
-		Content = "P: pause / resume after landing\nUp / Down: adjust speed\nHold Z: zipline / swing\nHold S: slide\nF5: show / hide player",
+		Content = "P: pause / resume\nUp / Down: adjust speed\nHold Z: zipline / swing\nHold S: slide\nF5: show / hide player",
 	})
 	local closed = false
 	local function destroy()

@@ -8,28 +8,46 @@ return function(tab, context)
 	})
 	local inventory = tab:Label({ Text = "Reading recordings…" })
 	local info = tab:Paragraph({ Name = "Selected recording", Content = "Select a file to inspect or convert." })
-	local localChoice = tab:Dropdown({
+	local localChoice, bundledChoice
+	local function select(name, source)
+		selected = name
+		local other = source == "Local" and bundledChoice or localChoice
+		if other then
+			other:Set(nil, true)
+		end
+		info:Set(
+			name and (source .. ": " .. name .. "\nChoose Inspect to view its duration and metadata.")
+				or "Select a file to inspect or convert."
+		)
+	end
+	localChoice = tab:Dropdown({
 		Name = "Local files",
 		Options = {},
 		SearchAfter = 0,
 		Callback = function(name)
-			selected = name
+			select(name, "Local")
 		end,
 	})
-	local bundledChoice = tab:Dropdown({
+	bundledChoice = tab:Dropdown({
 		Name = "Bundled files",
+		Desc = "Available to download. Files already saved locally appear above.",
 		Options = {},
 		SearchAfter = 0,
 		Callback = function(name)
-			selected = name
+			select(name, "Bundled")
 		end,
 	})
+	local refreshing = false
 	local function refresh()
+		if refreshing or tab.Window._destroyed then
+			return
+		end
+		refreshing = true
 		localFiles, bundled = {}, {}
 		local ok, files = pcall(function()
 			return listfiles(Runtime.path("TAS FILES"))
 		end)
-		if ok then
+		if ok and type(files) == "table" then
 			for _, path in ipairs(files) do
 				local name = path:match("([^/\\]+)$")
 				if name and (name:match("%.json$") or name:match("%.fe2tomatas$")) then
@@ -38,18 +56,36 @@ return function(tab, context)
 			end
 		end
 		local catalogOK, catalog = pcall(Runtime.catalog)
-		if catalogOK then
+		if catalogOK and type(catalog) == "table" then
 			for _, item in ipairs(catalog) do
-				table.insert(bundled, item.name)
+				if not table.find(localFiles, item.name) then
+					table.insert(bundled, item.name)
+				end
 			end
 		end
 		table.sort(localFiles)
 		table.sort(bundled)
+		refreshing = false
+		if tab.Window._destroyed then
+			return
+		end
 		localChoice:Refresh(localFiles, true)
 		bundledChoice:Refresh(bundled, true)
+		if selected and table.find(localFiles, selected) then
+			localChoice:Set(selected, true)
+			bundledChoice:Set(nil, true)
+		elseif selected and table.find(bundled, selected) then
+			bundledChoice:Set(selected, true)
+			localChoice:Set(nil, true)
+		else
+			selected = nil
+			localChoice:Set(nil, true)
+			bundledChoice:Set(nil, true)
+			info:Set("Select a file to inspect or convert.")
+		end
 		inventory:Set(
 			string.format(
-				"%d local • %d bundled%s",
+				"%d local • %d available to download%s",
 				#localFiles,
 				#bundled,
 				ok and "" or " • Local listing unavailable"
@@ -59,12 +95,22 @@ return function(tab, context)
 			alert("Catalog unavailable: " .. tostring(catalog), "Warning")
 		end
 	end
+	local busy = false
 	local function useSelection(action)
+		if busy or tab.Window._destroyed then
+			return
+		end
 		if not selected then
 			alert("Select a recording first.", "Warning")
 			return
 		end
-		local ok, result = pcall(action, selected)
+		busy = true
+		local name = selected
+		local ok, result = pcall(action, name)
+		busy = false
+		if tab.Window._destroyed then
+			return
+		end
 		alert(ok and tostring(result) or ("Recording error: " .. tostring(result)), ok and "Success" or "Error")
 	end
 	tab:Button({
@@ -73,6 +119,9 @@ return function(tab, context)
 		Callback = function()
 			useSelection(function(name)
 				local frames, metadata = Recordings.loadFile(name)
+				if tab.Window._destroyed or selected ~= name then
+					return "Inspection finished: " .. name
+				end
 				info:Set(
 					string.format(
 						"%s\n%d frames • %.2f seconds\nMap: %s • Author: %s",
@@ -121,18 +170,25 @@ return function(tab, context)
 		Style = "Primary",
 		Icon = "download",
 		Callback = function()
-			if importing then
+			if importing or busy or tab.Window._destroyed then
 				return
 			end
 			importing = true
+			busy = true
 			local ok, result = pcall(function()
-				assert(url:Get():match("^https://"), "Enter an HTTPS recording URL")
-				assert(map:Get():match("%S"), "Enter a map name")
-				local frames, metadata = Recordings.codec.decode(game:HttpGet(url:Get()))
-				metadata.mapName = map:Get()
-				return Recordings.save(map:Get(), frames, metadata)
+				local address = url:Get():match("^%s*(.-)%s*$")
+				local mapName = map:Get():match("^%s*(.-)%s*$")
+				assert(address:match("^https://%S+$"), "Enter an HTTPS recording URL")
+				assert(mapName ~= "", "Enter a map name")
+				local frames, metadata = Recordings.codec.decode(game:HttpGet(address))
+				metadata.mapName = mapName
+				return Recordings.save(mapName, frames, metadata)
 			end)
 			importing = false
+			busy = false
+			if tab.Window._destroyed then
+				return
+			end
 			alert(ok and ("Imported: " .. result) or tostring(result), ok and "Success" or "Error")
 			if ok then
 				refresh()

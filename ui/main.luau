@@ -35,6 +35,9 @@ return function(context)
 		elseif key == "InterfaceScale" then
 			UI.setScale(value)
 		end
+		if context.savePreferences then
+			context.savePreferences(key)
+		end
 	end
 	local function bind(page, kind, key, name, description, extra)
 		local options = {
@@ -312,7 +315,10 @@ return function(context)
 	}) do
 		local feature = Advanced.guard.features[name]
 		if not feature then
-			advanced:Paragraph({ Name = name .. " • unavailable", Content = "The advanced module could not initialize." })
+			advanced:Paragraph({
+				Name = name .. " • unavailable",
+				Content = "The advanced module could not initialize.",
+			})
 		else
 			local control
 			local note = advanced:Paragraph({ Name = name, Content = "Checking…" })
@@ -430,6 +436,30 @@ return function(context)
 		end,
 	})
 	settings:Section("Session tools")
+	settings:Paragraph({
+		Name = "Remembered preferences",
+		Content = "Interface scale, notification choices, playback speed, and timing settings save automatically on this device. Automation, movement toggles, and spending actions always start off.",
+	})
+	button(
+		settings,
+		"ResetPreferences",
+		"Restore preference defaults",
+		"Resets remembered settings without deleting recordings.",
+		"rotate-ccw",
+		function()
+			UI.confirm(
+				window,
+				"Restore preference defaults?",
+				"Your recordings and active feature toggles will not be changed.",
+				function()
+					if context.resetPreferences then
+						context.resetPreferences()
+						sync()
+					end
+				end
+			)
+		end
+	)
 	button(settings, "Rejoin", "Rejoin game", nil, "log-in", context.rejoin)
 	button(
 		settings,
@@ -442,6 +472,25 @@ return function(context)
 	button(settings, "Hide", "Hide interface", "Use the floating FloodGUI button to reopen it.", "eye-off", function()
 		window:Toggle(false)
 	end)
+	button(
+		settings,
+		"Unload",
+		"Unload FloodGUI",
+		"Stops the current session and removes its windows. Run the loader to reopen.",
+		"power",
+		function()
+			UI.confirm(
+				window,
+				"Unload FloodGUI?",
+				"Automation and TAS playback will stop. Save any creator recording first.",
+				function()
+					if context.unload then
+						context.unload()
+					end
+				end
+			)
+		end
+	)
 	local about = tab("about", "About", "info", "FloodGUI • tomato red and black")
 	about:Paragraph({
 		Name = "Credits",

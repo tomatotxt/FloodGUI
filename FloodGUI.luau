@@ -1,5 +1,6 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
 local Automation = Runtime.run("automation.luau")
+local Overrides = Runtime.run("overrides.luau")()
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
 getgenv().FloodGUIRecordings = Recordings
 -- ==============================================================================
@@ -225,7 +226,8 @@ local function CleanMapName(name)
 end
 
 local function GetChar()
-    return LocalPlayer.Character or (LocalPlayer.CharacterAdded:wait() and LocalPlayer.Character)
+    -- Event and render handlers must not pile up waiting for a respawn.
+    return LocalPlayer.Character
 end
 
 local collisionState = setmetatable({}, {__mode = "k"})
@@ -262,7 +264,7 @@ end
 
 local function GetSessionKey()
     local success, key = pcall(function() return ReqPasskey:InvokeServer() end)
-    return success and -key or nil
+    return success and type(key) == "number" and key == key and math.abs(key) ~= math.huge and -key or nil
 end
 
 local function HasTASFile(rawName)
@@ -484,7 +486,9 @@ TrackConnection(Multiplayer.ChildAdded:Connect(function(NewMap)
         Alert("Map is too hard ("..result.."). Resetting...", "Error")
         State.ResettingForDifficulty = true
         task.wait(1)
-        local h = GetChar():FindFirstChild("Humanoid")
+        if Session.Cancelled then return end
+        local character = GetChar()
+        local h = character and character:FindFirstChild("Humanoid")
         if h then h.Health = 0 end
         return
     end
@@ -583,6 +587,7 @@ end)
 
 -- Mod & Movement Loop
 TrackConnection(RunService.Heartbeat:Connect(function()
+    if Session.Cancelled then return end
     if State.Noclip then Noclip(true) end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -591,13 +596,18 @@ TrackConnection(RunService.Heartbeat:Connect(function()
         -- 1. `not getgenv().IsTASPlaying`: Completely stops the GUI from messing with movement if TAS is active.
         -- 2. `hum.WalkSpeed > 0`: Allows the GUI to respect the Map's 0 WalkSpeed cooldown.
         if State.MovementOverrides and not getgenv().IsTASPlaying and not getgenv().TAS_Active and hum.WalkSpeed > 0 then
-            if hum.WalkSpeed ~= State.WalkSpeed then hum.WalkSpeed = State.WalkSpeed end
-            if hum.JumpPower ~= State.JumpPower then hum.JumpPower = State.JumpPower end
+            Overrides.set(hum, "WalkSpeed", State.WalkSpeed)
+            Overrides.set(hum, "JumpPower", State.JumpPower)
+        elseif not State.MovementOverrides and not getgenv().IsTASPlaying and not getgenv().TAS_Active then
+            Overrides.restore(hum, "WalkSpeed")
+            Overrides.restore(hum, "JumpPower")
         end
 
         if State.GodMode and not State.ResettingCharacter and not State.ResettingForDifficulty then
-            hum.MaxHealth = 100000
+            Overrides.set(hum, "MaxHealth", 100000)
             hum.Health = 100000
+        elseif not State.GodMode and Overrides.restore(hum, "MaxHealth") then
+            hum.Health = math.min(hum.Health, hum.MaxHealth)
         end
     end
 end))
@@ -655,6 +665,25 @@ end
 -- [9] AIRFLOW USER INTERFACE
 -- ==============================================================================
 UI = Runtime.run("ui/service.luau")
+local Preferences = Runtime.run("preferences.luau")(Runtime, HttpService)
+local preferencesOK, preferencesError = Preferences.load(State)
+UI.notifications = State.Notifications
+UI.setScale(State.InterfaceScale)
+if not preferencesOK then Alert("Preferences not loaded; using defaults: " .. tostring(preferencesError), "Warning") end
+local preferenceGeneration = 0
+local preferencesDirty = false
+local function SavePreferences(key)
+    if key and not Preferences.accepts(key) then return end
+    preferenceGeneration += 1
+    preferencesDirty = true
+    local generation = preferenceGeneration
+    task.delay(0.4, function()
+        if generation ~= preferenceGeneration or Session.Cancelled then return end
+        local ok, message = Preferences.save(State)
+        if ok then preferencesDirty = false end
+        if not ok then Alert("Preferences not saved: " .. tostring(message), "Warning") end
+    end)
+end
 local function StopAutomation()
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth = false, false
@@ -665,14 +694,27 @@ local function StopAutomation()
 end
 local previousCleanup = Session.Cleanup
 Session.Cleanup = function()
-    if previousCleanup then previousCleanup() end
+    if Session.Cleaned then return end
+    Session.Cleaned = true
+    Session.Cancelled = true
+    if preferencesDirty then Preferences.save(State); preferencesDirty = false end
+    State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
+    State.AutoCollect, State.AutoRebirth, State.Noclip, State.SwimEnabled = false, false, false, false
+    getgenv().TomatoAutoFarm = false
+    if previousCleanup then pcall(previousCleanup) end
     if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
     if getgenv().TAS_Active and getgenv().FloodGUIStopCreator then pcall(getgenv().FloodGUIStopCreator) end
+    for _, connection in ipairs(getgenv().FloodGUI_Connections or {}) do pcall(function() connection:Disconnect() end) end
+    pcall(Noclip, false)
+    Overrides.restoreAll()
     UI.destroy()
 end
 local Interface = Runtime.run("ui/main.luau")({
     runtime=Runtime, ui=UI, state=State, advanced=Advanced, recordings=Recordings, session=Session,
     noclip=Noclip, alert=Alert, execute=ExecuteSecondaryScript, stop=StopAutomation,
+    savePreferences=SavePreferences,
+    resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,
+    unload=Session.Cleanup,
     swimAvailable=type(hookmetamethod)=="function" and type(checkcaller)=="function",
     rejoin=function() TeleportService:Teleport(game.PlaceId,LocalPlayer) end,
     infiniteYield=function() LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source") end,

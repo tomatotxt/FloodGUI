@@ -302,6 +302,16 @@ return function(sources)
 		copyInvite = function()
 			effects.invite = true
 		end,
+		savePreferences = function(key)
+			effects.preferenceKey = key
+		end,
+		resetPreferences = function()
+			state.InterfaceScale = 1
+			effects.preferencesReset = true
+		end,
+		unload = function()
+			effects.unloaded = true
+		end,
 	})
 	for _, id in ipairs({ "home", "farm", "maps", "tas", "files", "movement", "advanced", "settings", "about" }) do
 		assert(main.tabs[id], "Missing main tab: " .. id)
@@ -342,6 +352,7 @@ return function(sources)
 	assert(not main.controls.Noclip:Get(), "Keyboard change not reflected")
 	main.controls.StartDelay:Set(2.5)
 	assert(state.StartDelay == 2.5)
+	assert(effects.preferenceKey == "StartDelay", "Preference changes must reach persistence")
 	main.controls.ChallengeInterval:Set(120)
 	assert(state.ChallengeInterval == 120)
 	main.controls.Creator.Options.Callback()
@@ -368,17 +379,39 @@ return function(sources)
 	end
 	local localChoice = control(main.window, "Local files")
 	assert(#localChoice.Choices == 1)
+	local bundledChoice = control(main.window, "Bundled files")
+	assert(
+		#bundledChoice.Choices == 1 and bundledChoice.Choices[1] == "Map B.json",
+		"Do not duplicate local runs in download list"
+	)
 	localChoice:Set("Map A.json")
+	bundledChoice:Set("Map B.json")
+	assert(localChoice:Get() == nil, "Only one recording selection may be active")
+	localChoice:Set("Map A.json")
+	assert(bundledChoice:Get() == nil)
 	control(main.window, "Save selected as binary").Options.Callback()
 	assert(effects.convert[1] == "Map A.json" and effects.convert[2] == "binary")
-	control(main.window, "Recording URL"):Set("https://valid")
-	control(main.window, "Map name"):Set("New map")
+	control(main.window, "Recording URL"):Set("  https://valid  ")
+	control(main.window, "Map name"):Set("  New map  ")
 	control(main.window, "Import and save binary").Options.Callback()
 	assert(effects.saved[1] == "New map")
 	effects.saved = nil
 	control(main.window, "Recording URL"):Set("https://invalid")
 	control(main.window, "Import and save binary").Options.Callback()
 	assert(not effects.saved, "Bad file imported")
+	files = {}
+	effects.convert = nil
+	control(main.window, "Refresh recordings").Options.Callback()
+	-- A moved local file can remain selected if it is available in the bundle.
+	assert(localChoice:Get() == nil and bundledChoice:Get() == "Map A.json")
+	main.controls.ResetPreferences.Options.Callback()
+	assert(not effects.preferencesReset)
+	pendingConfirm()
+	assert(effects.preferencesReset)
+	main.controls.Unload.Options.Callback()
+	assert(not effects.unloaded)
+	pendingConfirm()
+	assert(effects.unloaded)
 	local creator = loadModule("ui/creator.luau").Create()
 	local clicked = 0
 	creator.BindAction("SaveRun", function()

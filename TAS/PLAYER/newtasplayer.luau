@@ -1,5 +1,6 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
+local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
 if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
 local INPUT = Runtime.run("vendor/input.luau")
 
@@ -8,7 +9,7 @@ local UI = Runtime.run("ui/service.luau")
 local sharedState = getgenv().State and getgenv().State() or {}
 local PlayerUI
 
-local TimeModifier = 1 / (sharedState.PlaybackSpeed or 1)
+local TimeModifier = 1 / Timeline.speed(sharedState.PlaybackSpeed)
 local DynamicTimeScale = 1 -- [MAP EVENT MODIFIER] Dynamically scales speed mid-game
 local SwimSmoothness = sharedState.SwimSmoothness or 0.04
 
@@ -25,10 +26,13 @@ if getgenv().TASConnections then
         if connection then connection:Disconnect() end
     end
 end
-getgenv().TASConnections = {}
+local Connections = {}
+local CleanedUp = false
+getgenv().TASConnections = Connections
 
 local function AddConnection(conn)
-    table.insert(getgenv().TASConnections, conn)
+    if CleanedUp then conn:Disconnect(); return conn end
+    table.insert(Connections, conn)
     return conn
 end
 
@@ -53,7 +57,11 @@ local RS = game:GetService('RunService')
 local HttpService = game:GetService("HttpService")
 
 -- // PROFESSIONAL ALERT SYSTEM //
-local CLMAIN = getsenv(LP.PlayerScripts:WaitForChild("CL_MAIN_GameScript", 10))
+local CLMAIN
+pcall(function()
+    local script = LP.PlayerScripts:WaitForChild("CL_MAIN_GameScript", 10)
+    if script then CLMAIN = getsenv(script) end
+end)
 
 local Theme = {
     System = Color3.fromRGB(150, 150, 255),
@@ -70,7 +78,7 @@ local function Log(msg, category)
     print(text)
     UI.notify(text, category)
     if CLMAIN and type(CLMAIN.newAlert) == "function" then
-        CLMAIN.newAlert(text, color)
+        pcall(CLMAIN.newAlert, text, color)
     end
 end
 
@@ -81,29 +89,17 @@ task.spawn(function()
     local HUD = GameGui and GameGui:WaitForChild("HUD", 10)
     local MapEventInfo = HUD and HUD:WaitForChild("MapEventInfo", 10)
 
-    if MapEventInfo then
-        AddConnection(MapEventInfo:GetPropertyChangedSignal("Text"):Connect(function()
-            local currentText = MapEventInfo.Text
-            local Events = {}
-            for rawEventName in string.gmatch(currentText, ">(.-)</font>") do
-                local formattedEventName = string.lower(rawEventName):gsub("%s+", "")
-                table.insert(Events, formattedEventName)
+    if MapEventInfo and not CleanedUp then
+        local function updateEvents()
+            if CleanedUp then return end
+            local previous = DynamicTimeScale
+            DynamicTimeScale = Timeline.eventModifier(MapEventInfo.Text)
+            if previous ~= DynamicTimeScale then
+                Log(string.format("Map event speed: %.2fx", 1 / DynamicTimeScale), "Highlight")
             end
-
-            if #Events > 0 then
-                DynamicTimeScale = 1 -- Reset base modifier before recalculating
-                for _, eventName in ipairs(Events) do
-                    if eventName == "speedup" then
-                        DynamicTimeScale = DynamicTimeScale * (1 / 1.1225)
-                    elseif eventName == "slowdown" then
-                        DynamicTimeScale = DynamicTimeScale * (1 / (1 - 0.1091))
-                    end
-                end
-
-                local speedMultiplier = 1 / DynamicTimeScale
-                Log(string.format("Map event! Game speed adjusted to %.2fx", speedMultiplier), "Highlight")
-            end
-        end))
+        end
+        updateEvents()
+        AddConnection(MapEventInfo:GetPropertyChangedSignal("Text"):Connect(updateEvents))
     end
 end)
 
@@ -112,12 +108,12 @@ if not getgenv().alreadystarted then
     task.wait(0.1)
     Log("TAS Engine initialized.", "System")
     task.wait(0.1)
-    Log("Current speed set to: " .. TimeModifier .. "x", "Highlight")
+    Log("Current speed set to: " .. (1 / TimeModifier) .. "x", "Highlight")
     getgenv().alreadystarted = true
 else
     Log("TAS Engine reloaded!", "System")
     task.wait(0.15)
-    Log("Current speed set to: " .. TimeModifier .. "x", "Highlight")
+    Log("Current speed set to: " .. (1 / TimeModifier) .. "x", "Highlight")
 end
 
 -- // FE2 WATER DETECTION SYSTEM //
@@ -138,7 +134,7 @@ local function CacheWaterParts(MapFolder)
             attempts = attempts + 1
             task.wait(0.5)
         end
-    until #WaterParts > 0 or attempts > 10
+    until #WaterParts > 0 or attempts > 10 or CleanedUp or not MapFolder.Parent
 
     if #WaterParts > 0 then
         Log("Found " .. #WaterParts .. " water areas for swimming.", "Success")
@@ -149,6 +145,7 @@ end
 
 local function IsInWater(Position)
     for _, water in pairs(WaterParts) do
+        if not water.Parent then continue end
         local halfSize = water.Size * 0.5
         local objSpace = water.CFrame:PointToObjectSpace(Position)
         if math.abs(objSpace.Y) <= halfSize.Y and math.abs(objSpace.X) <= halfSize.X and math.abs(objSpace.Z) <= halfSize.Z then
@@ -162,16 +159,12 @@ local function IsInWater(Position)
 end
 
 -- // ANIMATION HELPERS //
-if not LP.Character or not LP.Character:FindFirstChild("Animate") then
-    LP.CharacterAdded:Wait()
-    LP.Character:WaitForChild("Animate", 10)
-end
-
 local Animate, OriginalPlayAnim
 local SuccessHook, Err = pcall(function()
-    local AnimateScript = LP.Character.Animate
+    local character = LP.Character or LP.CharacterAdded:Wait()
+    local AnimateScript = assert(character:WaitForChild("Animate", 10), "Animate unavailable")
     Animate = getsenv(AnimateScript)
-    OriginalPlayAnim = Animate.playAnimation
+    OriginalPlayAnim = assert(type(Animate.playAnimation) == "function" and Animate.playAnimation, "Animation API changed")
 
     -- Cache function globally so re-executions can restore it BEFORE capturing the empty dummy function
     getgenv().TAS_RestoreAnim = function()
@@ -202,13 +195,13 @@ local function toggleSlide(newValue)
         LP.Character.Animate.Sliding:Fire(newValue)
     end
 end
+local OriginalAutoRotate
 
 getgenv().IsTASPlaying = true
 getgenv().TASCurrentMoveDir = Vector3.new(0,0,0)
 
 -- Prevent multi-execution HookMetamethod lag leaks
 if not getgenv().TASHookApplied then
-    getgenv().TASHookApplied = true
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, key)
         if getgenv().IsTASPlaying and key == "MoveDirection" then
@@ -218,6 +211,7 @@ if not getgenv().TASHookApplied then
         end
         return oldIndex(self, key)
     end)
+    getgenv().TASHookApplied = true
 end
 
 -- // SLIDING & ZIPLINE CONFIGURATION //
@@ -235,13 +229,13 @@ local IsManualSlide = false
 
 -- // CLEANUP & AUTO-QUEUE //
 local LiftCheckPos = Vector3.new(-25, -144, 139)
-local CleanedUp = false
 local function Cleanup(resetCharacter)
     if CleanedUp then return end
     CleanedUp = true
-    INPUT:Destroy()
-    if PlayerUI then PlayerUI.Destroy(); PlayerUI = nil end
+    pcall(function() INPUT:Destroy() end)
+    if PlayerUI then pcall(PlayerUI.Destroy); PlayerUI = nil end
     getgenv().IsTASPlaying = false
+    getgenv().TASCurrentMoveDir = Vector3.zero
 
     -- Reset state variables on cleanup
     IsSliding = false
@@ -253,12 +247,11 @@ local function Cleanup(resetCharacter)
 
 
 
-    if getgenv().TASConnections then
-        for _, connection in pairs(getgenv().TASConnections) do
-            if connection then connection:Disconnect() end
-        end
-        getgenv().TASConnections = {}
+    for _, connection in pairs(Connections) do
+        if connection then pcall(function() connection:Disconnect() end) end
     end
+    table.clear(Connections)
+    if getgenv().TASConnections == Connections then getgenv().TASConnections = nil end
 
     if getgenv().TAS_RestoreAnim then
         pcall(getgenv().TAS_RestoreAnim)
@@ -269,8 +262,10 @@ local function Cleanup(resetCharacter)
         if LP.Character:FindFirstChild("Animate") and LP.Character.Animate:FindFirstChild("ToggleSwim") then
             pcall(function() LP.Character.Animate.ToggleSwim:Fire(false) end)
         end
-        if LP.Character:FindFirstChild("Humanoid") then LP.Character.Humanoid.AutoRotate = true end
-        toggleSlide(false)
+        if LP.Character:FindFirstChild("Humanoid") and OriginalAutoRotate ~= nil then
+            LP.Character.Humanoid.AutoRotate = OriginalAutoRotate
+        end
+        pcall(toggleSlide, false)
     end
 
     if resetCharacter and LP.Character and LP.Character:FindFirstChild("Humanoid") then
@@ -279,10 +274,14 @@ local function Cleanup(resetCharacter)
 
         task.spawn(function()
             local newChar = LP.CharacterAdded:Wait()
+            if getgenv().FloodGUIStopPlayer ~= Cleanup or sharedState.AutoPlay == false then return end
             local newRoot = newChar:WaitForChild("HumanoidRootPart", 10)
-            local Remote = game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("AddedWaiting")
+            local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remote", 10)
+            local Remote = remotes and remotes:WaitForChild("AddedWaiting", 10)
+            if not Remote then return end
 
-            while newChar and newChar.Parent and newRoot do
+            while newChar and newChar.Parent and newRoot and newRoot.Parent
+                and getgenv().FloodGUIStopPlayer == Cleanup and sharedState.AutoPlay ~= false do
                 local dist = (newRoot.Position - LiftCheckPos).Magnitude
                 if dist <= 30 then
                     print("[TAS] Entered lift. Waiting for map to load...")
@@ -359,6 +358,15 @@ if not decoded then
     Cleanup(true)
     return
 end
+if CleanedUp then return end
+if type(TAS) ~= "table" or #TAS == 0 then
+    Log("Recording contains no playable frames.", "Error")
+    Cleanup(false)
+    return
+end
+AddConnection(Map.AncestryChanged:Connect(function(_, parent)
+    if not parent then Cleanup(false) end
+end))
 
 local OriginalFrameCount = #TAS
 Log("Loaded run for " .. realMapName .. " (" .. OriginalFrameCount .. " frames).", "Info")
@@ -369,6 +377,7 @@ local SpawnPoint = nil
 for _,v in ipairs(Map:GetChildren()) do
     if v.Name == "Part" then
         local c; c = v:GetPropertyChangedSignal("Rotation"):Connect(function() c:Disconnect(); SpawnPoint = v end)
+        AddConnection(c)
     end
 end
 
@@ -376,10 +385,12 @@ local t = 0
 repeat task.wait(0.1); t=t+0.1; if not SpawnPoint then SpawnPoint = Map:FindFirstChild("Spawn", true) end
 until SpawnPoint or t > 10 or CleanedUp
 
+if CleanedUp then return end
 if not SpawnPoint then Log("Hmm, couldn't find where to spawn on this map.", "Error") Cleanup(true) return end
 
 -- // MAP PRE-PROCESSING & BUTTON HITBOX EXPANDER //
 CacheWaterParts(Map)
+if CleanedUp then return end
 
 for _, v in ipairs(Map:GetDescendants()) do
     if v.Name == 'ButtonIcon' then
@@ -399,10 +410,13 @@ end
 Log("Map buttons and elements processed.", "Success")
 
 task.wait(0.1)
+if CleanedUp or not LP.Character then return end
 Log("Starting the run! Sit back and relax.", "Success")
 
 local RootPart = LP.Character:WaitForChild("HumanoidRootPart", 10)
 local Humanoid = LP.Character:WaitForChild("Humanoid", 10)
+if CleanedUp then return end
+if not RootPart or not Humanoid then Cleanup(false); return end
 
 while (RootPart.Anchored == true) or (Humanoid.WalkSpeed <= 0) do
     if CleanedUp then return end
@@ -410,6 +424,7 @@ while (RootPart.Anchored == true) or (Humanoid.WalkSpeed <= 0) do
 end
 
 if LP.Character and LP.Character:FindFirstChild("Humanoid") then
+    OriginalAutoRotate = LP.Character.Humanoid.AutoRotate
     LP.Character.Humanoid.AutoRotate = false
 end
 
@@ -556,7 +571,7 @@ local function activateAnimation(AnimData, Elapsed)
 end
 
 local Offset = SpawnPoint.Position - NewV(0, 1000, 0)
-local OldFrame = 3
+local OldFrame = 1
 local RenderedFrames = 0
 local FinishedRun = false
 
@@ -568,6 +583,7 @@ local VisualElapsed = 0
 local LastClock = os.clock()
 
 local PAUSED = false
+local PauseCFrame
 
 -- // SPEED CONTROL & PAUSE SYSTEM //
 local function AdjustSpeed(step)
@@ -619,35 +635,32 @@ if sKey then
     AddConnection(sKey.Released:Connect(function() SetManualSlide(false) end))
 end
 AddConnection(UserInputService.WindowFocusReleased:Connect(function() SetManualZipline(false); SetManualSlide(false) end))
-local PausePending = false
-
 local function TriggerPauseToggle(requested)
-    if PausePending or CleanedUp then return end
+    if CleanedUp or not RootPart.Parent then return end
     local desired = requested
     if desired == nil then desired = not PAUSED end
     if desired == PAUSED then return end
-    PausePending = true
-    task.spawn(function()
-        while not CleanedUp and desired and Humanoid and Humanoid.Parent and Humanoid.FloorMaterial == Enum.Material.Air do task.wait() end
-        PausePending = false
-        if CleanedUp or not Humanoid or not Humanoid.Parent then return end
-        PAUSED = desired
-        if PAUSED then
-            pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
-            LastPlayedAnim = "idle"
-            Log("TAS paused", "Warning")
-        else LastClock = os.clock(); Log("TAS resumed", "Success") end
-    end)
+    PAUSED = desired
+    if PAUSED then
+        PauseCFrame = RootPart.CFrame
+        pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
+        LastPlayedAnim = "idle"
+        Log("TAS paused", "Warning")
+    else
+        PauseCFrame = nil
+        LastClock = os.clock()
+        Log("TAS resumed", "Success")
+    end
 end
 AddConnection(INPUT["P"].Pressed:Connect(function() TriggerPauseToggle() end))
 PlayerUI = Runtime.run("ui/player.luau")({
     mapName=realMapName, smoothness=SwimSmoothness, track=AddConnection, pause=TriggerPauseToggle,
     zipline=SetManualZipline, slide=SetManualSlide,
-    setSpeed=function(multiplier) TimeModifier = 1 / math.clamp(multiplier,0.1,20) end,
+    setSpeed=function(multiplier) TimeModifier = 1 / Timeline.speed(multiplier, 1 / TimeModifier) end,
     setSmoothness=function(value) SwimSmoothness=value end,
     stop=function() sharedState.AutoPlay=false; Cleanup(false) end,
     status=function() return {finished=CleanedUp, elapsed=VisualElapsed, duration=TAS[#TAS].time,
-        paused=PAUSED, pausePending=PausePending, speed=1/TimeModifier, effectiveSpeed=1/(TimeModifier*DynamicTimeScale)} end,
+        paused=PAUSED, pausePending=false, speed=1/TimeModifier, effectiveSpeed=1/(TimeModifier*DynamicTimeScale)} end,
 })
 
 
@@ -669,6 +682,7 @@ MainLoop = RS.Heartbeat:Connect(function()
 
     -- WHILE PAUSED: Keep velocity strictly at Vector3.zero without anchoring
     if PAUSED == true then
+        if PauseCFrame then RootPart.CFrame = PauseCFrame end
         RootPart.Velocity = Vector3.zero
         RootPart.AssemblyLinearVelocity = Vector3.zero
         RootPart.AssemblyAngularVelocity = Vector3.zero
@@ -689,27 +703,8 @@ MainLoop = RS.Heartbeat:Connect(function()
 
     Humanoid.Health = 99999
 
-    while OldFrame < #TAS and TAS[OldFrame + 1].time <= VisualElapsed do OldFrame = OldFrame + 1 end
-
-    if OldFrame >= #TAS then
-        if not FinishedRun then
-            FinishedRun = true
-            Log("Run completed successfully! Awesome.", "Success")
-            if getgenv().TAS_RestoreAnim then
-                pcall(getgenv().TAS_RestoreAnim)
-                getgenv().TAS_RestoreAnim = nil
-            end
-            pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
-            Cleanup(false)
-        end
-        return
-    end
-
-    local FA = TAS[OldFrame]
-    local FB = TAS[OldFrame + 1] or FA
-
-    local Dur = FB.time - FA.time
-    local Alpha = (Dur > 0) and math.clamp((VisualElapsed - FA.time) / Dur, 0, 1) or 0
+    local FA, FB, Alpha, nextFrame, atEnd = Timeline.sample(TAS, VisualElapsed, OldFrame)
+    OldFrame = nextFrame
 
     local cfA = NewC(FA.CCFrame[1], FA.CCFrame[2], FA.CCFrame[3]) * AngC(FA.CCFrame[4], FA.CCFrame[5], FA.CCFrame[6])
     local cfB = NewC(FB.CCFrame[1], FB.CCFrame[2], FB.CCFrame[3]) * AngC(FB.CCFrame[4], FB.CCFrame[5], FB.CCFrame[6])
@@ -768,5 +763,12 @@ MainLoop = RS.Heartbeat:Connect(function()
     end
 
     pcall(activateAnimation, AnimData, VisualElapsed)
+    -- The last recorded pose must be applied before releasing control.
+    if atEnd and not FinishedRun then
+        FinishedRun = true
+        VisualElapsed = TAS[#TAS].time
+        Log("Run completed successfully!", "Success")
+        Cleanup(false)
+    end
 end)
 AddConnection(MainLoop)
