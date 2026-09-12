@@ -60,6 +60,13 @@ local online=assert(environment.loadstring(source));assert(online()=='started')
 assert(fetched[1]=='https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/runtime.luau')
 local offline=assert(environment.loadstring(source));assert(offline({localOnly=true})=='started' and #fetched==1)
 assert(not pcall(offline,{root='../outside'}))
+for _,invalid in ipairs({'partial/../outside','partial/CON','a//b','a./b'}) do
+  local before=0;for _ in pairs(folders)do before+=1 end
+  assert(not pcall(offline,{root=invalid}))
+  local after=0;for _ in pairs(folders)do after+=1 end
+  assert(before==after,'Invalid root created partial folders')
+end
+assert(not pcall(offline,{localOnly='true'}))
 print('PASS: actual online/local loader entry points and invalid root rejection')
 `;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'floodgui-check-'));
@@ -79,6 +86,14 @@ try{
   const airflowFile=path.join(temp,'airflow.spec.luau');
   fs.writeFileSync(airflowFile,`local test=assert(loadstring(${literal(airflowTest)}))()\ntest(${literal(airflowSource)}, {${iconNames.map(JSON.stringify).join(',')}})`);
   execFileSync(tool('luau'),[airflowFile],{stdio:'inherit'});
+  const enginesTest=fs.readFileSync(path.join(root,'tests/tas-engines-harness.luau'),'utf8');
+  const enginesFile=path.join(temp,'tas-engines.spec.luau');
+  fs.writeFileSync(enginesFile,`local test=assert(loadstring(${literal(enginesTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'TAS/CREATOR/creator.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'TAS/PLAYER/newtasplayer.luau'),'utf8'))})`);
+  execFileSync(tool('luau'),[enginesFile],{stdio:'inherit'});
+  const serviceTest=fs.readFileSync(path.join(root,'tests/ui-service-harness.luau'),'utf8');
+  const serviceFile=path.join(temp,'ui-service.spec.luau');
+  fs.writeFileSync(serviceFile,`local test=assert(loadstring(${literal(serviceTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'ui/service.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'TAS/CREATOR/touch-controls.luau'),'utf8'))})`);
+  execFileSync(tool('luau'),[serviceFile],{stdio:'inherit'});
 }
 finally{assert(path.resolve(temp).startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(temp).startsWith('floodgui-check-'));fs.rmSync(temp,{recursive:true,force:true});}
 console.log(`PASS: ${scripts.length} Luau files, ${catalog.length} recordings (${frames} JSON frames), loader references and dependency paths.`);

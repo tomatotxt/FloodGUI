@@ -31,6 +31,7 @@ local UI = { runtime = Runtime, library = Airflow, theme = theme, windows = {}, 
 getgenv().FloodGUIUI = UI
 
 function UI.window(id, title, subtitle, key)
+	assert(not UI.destroyed, "This FloodGUI session was unloaded; run the loader again")
 	if UI.windows[id] then
 		UI.windows[id]:Destroy()
 	end
@@ -106,7 +107,14 @@ end
 function UI.hold(tab, name, description, press, release, track)
 	local control = tab:Button({ Name = name, Desc = description, Icon = "hand" })
 	local touch = Runtime.run("TAS/CREATOR/touch-controls.luau")
-	local stop = touch.bindHold(control._frame, game:GetService("UserInputService"), press, release, track)
+	local stop = touch.bindHold(control._frame, game:GetService("UserInputService"), function()
+		if not control._disabled and not control._destroyed and tab.Window.Open and not tab.Window._destroyed then
+			press()
+		end
+	end, release, track)
+	-- Airflow cancels immediately on hide, tab switch, modal, and disable; waiting
+	-- for Root.Visible alone leaves a hold running through the closing animation.
+	tab.Window:_listen("Cancel", stop, control)
 	track(tab.Window.Root:GetPropertyChangedSignal("Visible"):Connect(function()
 		if not tab.Window.Root.Visible then
 			stop()

@@ -31,6 +31,8 @@ These scripts require Roblox and executor APIs including local file access and l
 - Manual play after buttons, farm/reset delays, and a stop-automation control.
 - Live playback speed, pause, progress, and hold controls; creator visualization toggles, editable shortcuts, and automatic-save settings.
 - Adjustable rebirth/challenge intervals, lift rejoining, idle prevention, notifications, and interface scale.
+- Remembered interface/timing preferences, with validation and a restore-defaults action. Active automation, spending and movement toggles are never restored from saved preferences.
+- Immediate playback pause, reliable held frame advance and checkpoint rewind, verified recording saves, and a clean unload action.
 - Optional fast load, direct buttons, forced win, boosts and challenge cycling. New options start off. Unavailable integrations are marked disabled; detected errors are isolated by feature.
 
 The forced-win option stays disabled when its escape lock cannot be identified safely. Spending options state their expected costs; estimates are inherited from the source scripts. Community Maps and standalone animation/zipline replacements remain separate.
@@ -39,23 +41,15 @@ The forced-win option stays disabled when its escape lock cannot be identified s
 
 Upload the **contents of this folder** to the repository root, not inside another FloodGUI folder. The code must be on `live`, with `loader.lua`, `runtime.luau`, `FloodGUI.luau`, `ui/`, `TAS/`, `TAS FILES/` and `vendor/` at the root. Use this working folder for the latest changes; the older ZIP is not being updated.
 
-For a fresh extraction of the upload ZIP:
-
-```sh
-git init -b live
-git add .
-git commit -m "Prepare FloodGUI live"
-git remote add origin https://github.com/tomatotxt/FloodGUI.git
-git push -u origin live
-```
-
-The prepared local repository already has a committed release on branch `live` and `origin` configured; use `git push -u origin live` after creating the empty GitHub repository. The preparation commit uses the local identity `Codex <codex@localhost>`; your global Git settings were not changed. No GitHub repository was created or changed during preparation. The public loader URL becomes available after that upload.
+The prepared local repository uses branch `live` with `origin` configured. After creating the GitHub repository, publish committed changes with `git push -u origin live`. Uploading or pushing is separate from running the local checks.
 
 ## Maintain
 
 `FloodGUI.luau` is the main app. `TAS/CREATOR/` and `TAS/PLAYER/` contain the integrated engines. `TAS/codec.luau` and `TAS/recordings.luau` define the translation and file APIs.
 
 `ui/` contains FloodGUI's Airflow interfaces: `main.luau`, `creator.luau`, `player.luau`, and the integrated `recordings.luau` browser. `service.luau` shares the theme, font loading, and window lifecycle. `vendor/airflow.luau` is the UI dependency used by all of them. Main menu: J; creator: F6; creator hold controls: F7; player: F5. Floating buttons reopen hidden windows on touch devices too.
+
+`preferences.luau` manages device-local `preferences.json` (excluded from Git); `overrides.luau` tracks reversible character properties. Settings → Unload FloodGUI stops the session and removes its windows. Save any active creator recording before unloading.
 
 With Node.js and the official Luau CLI installed:
 

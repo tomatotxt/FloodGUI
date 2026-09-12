@@ -1,4 +1,4 @@
-# Release verification — 2026-09-11
+# Release verification — 2026-09-12
 
 Target repository: `tomatotxt/FloodGUI`. Target branch: `live`.
 
@@ -12,11 +12,15 @@ Target repository: `tomatotxt/FloodGUI`. Target branch: `live`.
 - Airflow UI integration tests exercise all three interfaces with mock controls: existing feature coverage, toggle synchronization, guarded feature failures, spending confirmation, recording import/conversion, creator actions and shortcut editing, player settings, and window cleanup.
 - No active application code references Kavo or the old UI API. All UI modules resolve through the same `live` runtime as the rest of FloodGUI.
 - Actual Airflow library tests (mock Roblox services) cover bundled Lucide fallback, asynchronous refresh without executing remote source, retry throttling, icon aliases, invalid font responses and corrupt cache repair. Drag tests cover empty window areas, control exclusion, pointer ownership, cancellation, touch scrolling, overlapping windows and dialogs.
+- TAS tests cover first/final/single-frame playback, interpolation, event-speed reset, rewinding across checkpoints, held frame advance without deadlock, stop-during-advance cancellation, and immediate reversible pause. The creator/player control harness executes their actual function source.
+- Storage tests cover revision gaps, revision-only discovery, concurrent save reservations, verified disk writes, corrupt-local remote fallback without replacement, sparse-frame rejection, UTF-8 BOM imports, and invalid Windows paths before any directory creation.
+- Preferences tests cover the safe allowlist, types/ranges, unsupported-version protection, defaults, and storage failure isolation. Reversible-property tests ensure cleanup respects newer game-side values.
+- UI tests cover exclusive recording selection, refresh-during-save, remembered setting callbacks, unload/reset confirmation, disabled/deferred touch input, cancellation before closing animation, and service recreation after unloading. Airflow tests include disabled dropdowns, key capture cancellation, exact-once dialogs, and resilient control/window destruction.
 
 Airflow interaction changes: empty content/paragraph areas now drag the window as well as the sidebar. Buttons, inputs, sliders and touch-scrollable areas keep their normal behavior. Window dragging clamps immediately to screen edges. Stepper repeat stops on pointer release/focus loss/window hiding, old repeat timers cannot resume after a new press, and resize retains its selected base size. The launcher button measures total drag distance, including slow movement.
 
-In-game checklist: confirm Lucide images and ValleySans render in the target executor; drag from both panels; use sliders and text fields; scroll on a phone; release a held stepper outside its button; hide/reopen the window mid-gesture. Roblox asset availability and actual rendering cannot be proven by the local mocked tests.
+In-game checklist: confirm Lucide images and ValleySans render in the target executor; drag from both panels; use sliders and text fields; scroll on a phone; release a held stepper outside its button; switch tabs and hide/reopen mid-gesture. Record, rewind across a savestate, advance while holding, save/reload a revision, pause in midair, and verify the final playback pose. Change preferences and reload, then unload and verify movement/UI cleanup. Roblox asset availability and actual rendering cannot be proven by the local mocked tests.
 
-The future public FloodGUI loader endpoint cannot serve this release until the repository contents are uploaded to `live`. No remote repository was created or updated. No Roblox session was used; server acceptance, UI appearance and gameplay remain unverified in-game.
+These changes must be uploaded to `live` before the public loader can use them. This improvement pass did not publish to GitHub. No Roblox session was used; server acceptance, UI appearance and gameplay remain unverified in-game.
 
 Run `node scripts/check.mjs --luau-dir PATH_TO_LUAU` to repeat the local checks.

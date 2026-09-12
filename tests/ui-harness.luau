@@ -404,6 +404,22 @@ return function(sources)
 	control(main.window, "Refresh recordings").Options.Callback()
 	-- A moved local file can remain selected if it is available in the bundle.
 	assert(localChoice:Get() == nil and bundledChoice:Get() == "Map A.json")
+	-- A save occurring during a yielding catalog request must queue another scan.
+	local originalCatalog, waiting = runtime.catalog, true
+	runtime.catalog = function()
+		if waiting then
+			coroutine.yield()
+		end
+		return originalCatalog()
+	end
+	local refreshThread = coroutine.create(control(main.window, "Refresh recordings").Options.Callback)
+	assert(coroutine.resume(refreshThread))
+	files = { "Just saved.fe2tomatas" }
+	control(main.window, "Refresh recordings").Options.Callback()
+	waiting = false
+	assert(coroutine.resume(refreshThread))
+	assert(table.find(localChoice.Choices, "Just saved.fe2tomatas"), "A busy refresh dropped the new recording")
+	runtime.catalog = originalCatalog
 	main.controls.ResetPreferences.Options.Callback()
 	assert(not effects.preferencesReset)
 	pendingConfirm()

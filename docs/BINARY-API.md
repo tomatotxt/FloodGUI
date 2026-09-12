@@ -14,7 +14,9 @@ local binaryPath = api.convertFile("Blue Moon.json", "binary")
 local jsonPath = api.convertFile("Another Run.fe2tomatas", "json")
 ```
 
-`save` creates a numbered revision if a binary filename already exists. JSON export refuses to overwrite an existing destination. The creator exposes conversion and export buttons; saves from the keyboard, touch controls and automatic exit detection all use the binary writer.
+`save` creates a revision after the highest existing number, even when earlier revisions have been deleted or moved. Overlapping saves reserve different names. Binary saves and JSON exports read the written file back before reporting success; a failed verification reports an error and the creator retains its in-memory frames. JSON export refuses to overwrite an existing destination. The creator exposes conversion and export buttons; saves from the keyboard, touch controls and automatic exit detection all use the binary writer.
+
+If every suitable local recording is corrupt, `loadMap` can try the matching bundled recording in online mode, including when it has the same filename. This fallback never replaces the damaged local file. `loadFile` still inspects the explicitly selected local file, so corruption remains visible. Local-only mode never uses remote fallback.
 
 For memory-only conversion:
 

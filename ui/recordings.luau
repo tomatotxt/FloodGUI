@@ -2,6 +2,7 @@
 return function(tab, context)
 	local Runtime, Recordings, alert = context.runtime, context.recordings, context.alert
 	local selected, bundled, localFiles = nil, {}, {}
+	local selectedSource
 	tab:Paragraph({
 		Name = "Recording library",
 		Content = "Browse local runs or bundled maps. New imports and conversions are saved as binary revisions; existing recordings are preserved.",
@@ -11,6 +12,7 @@ return function(tab, context)
 	local localChoice, bundledChoice
 	local function select(name, source)
 		selected = name
+		selectedSource = source
 		local other = source == "Local" and bundledChoice or localChoice
 		if other then
 			other:Set(nil, true)
@@ -37,9 +39,13 @@ return function(tab, context)
 			select(name, "Bundled")
 		end,
 	})
-	local refreshing = false
+	local refreshing, refreshPending = false, false
 	local function refresh()
-		if refreshing or tab.Window._destroyed then
+		if tab.Window._destroyed then
+			return
+		end
+		if refreshing then
+			refreshPending = true
 			return
 		end
 		refreshing = true
@@ -47,18 +53,20 @@ return function(tab, context)
 		local ok, files = pcall(function()
 			return listfiles(Runtime.path("TAS FILES"))
 		end)
-		if ok and type(files) == "table" then
+		ok = ok and type(files) == "table"
+		if ok then
 			for _, path in ipairs(files) do
-				local name = path:match("([^/\\]+)$")
+				local name = type(path) == "string" and path:match("([^/\\]+)$")
 				if name and (name:match("%.json$") or name:match("%.fe2tomatas$")) then
 					table.insert(localFiles, name)
 				end
 			end
 		end
 		local catalogOK, catalog = pcall(Runtime.catalog)
-		if catalogOK and type(catalog) == "table" then
+		catalogOK = catalogOK and type(catalog) == "table"
+		if catalogOK then
 			for _, item in ipairs(catalog) do
-				if not table.find(localFiles, item.name) then
+				if type(item) == "table" and type(item.name) == "string" and not table.find(localFiles, item.name) then
 					table.insert(bundled, item.name)
 				end
 			end
@@ -74,11 +82,18 @@ return function(tab, context)
 		if selected and table.find(localFiles, selected) then
 			localChoice:Set(selected, true)
 			bundledChoice:Set(nil, true)
+			if selectedSource ~= "Local" then
+				select(selected, "Local")
+			end
 		elseif selected and table.find(bundled, selected) then
 			bundledChoice:Set(selected, true)
 			localChoice:Set(nil, true)
+			if selectedSource ~= "Bundled" then
+				select(selected, "Bundled")
+			end
 		else
 			selected = nil
+			selectedSource = nil
 			localChoice:Set(nil, true)
 			bundledChoice:Set(nil, true)
 			info:Set("Select a file to inspect or convert.")
@@ -93,6 +108,10 @@ return function(tab, context)
 		)
 		if not catalogOK then
 			alert("Catalog unavailable: " .. tostring(catalog), "Warning")
+		end
+		if refreshPending then
+			refreshPending = false
+			task.defer(refresh)
 		end
 	end
 	local busy = false
