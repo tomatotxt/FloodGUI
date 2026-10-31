@@ -1,9 +1,20 @@
-local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
+local IsLaunchCurrent, Own = ...
+IsLaunchCurrent = IsLaunchCurrent or function() return true end
+Own = Own or function() end
+if not IsLaunchCurrent() then return end
+local BaseRuntime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
+local Runtime = table.clone(BaseRuntime)
+function Runtime.run(path, ...)
+    return BaseRuntime.runScoped(IsLaunchCurrent, path, ...)
+end
 local Compat = Runtime.run("compat.luau")()
 local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
 local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
+local PhysicalOverrides = Runtime.run("overrides.luau")()
+Own(PhysicalOverrides.restoreAll)
 if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
 local INPUT = Runtime.run("vendor/input.luau")
+Own(function() INPUT:Destroy() end)
 
 local UserInputService = game:GetService("UserInputService")
 local UI = Runtime.run("ui/service.luau")
@@ -12,6 +23,9 @@ local PlayerUI
 
 local TimeModifier = 1 / Timeline.speed(sharedState.PlaybackSpeed)
 local DynamicTimeScale = 1 -- [MAP EVENT MODIFIER] Dynamically scales speed mid-game
+local NumericGameRate
+local RefreshHudRate
+local SmoothSwimOrientation = false
 local SwimSmoothness = sharedState.SwimSmoothness or 0.04
 
 print("FloodGUI TAS Player - Auto-Queue Active")
@@ -34,21 +48,10 @@ getgenv().TASConnections = Connections
 local function AddConnection(conn)
     if CleanedUp then conn:Disconnect(); return conn end
     table.insert(Connections, conn)
+    Own(function() conn:Disconnect() end)
     return conn
 end
 
--- // CONFIGURATION //
-local SkipMirroredMaps = {
-    ["Retro Coast"] = true, ["Zemblanity"] = true, ["Northern Mill"] = true,
-    ["Mysterium"] = true, ["Decaying Silo"] = true, ["Active Volcanic Mines"] = true,
-    ["Snowy Stronghold"] = true, ["Classic Canyon"] = true
-}
-local State = getgenv().State
-if State and State().HighlightOnlyMaps then
-    for _,v in ipairs(State().HighlightOnlyMaps) do SkipMirroredMaps[v] = true end
-end
-
-local Mirrored = false
 local NewV = Vector3.new
 local NewC = CFrame.new
 local AngC = CFrame.fromEulerAnglesXYZ
@@ -83,6 +86,17 @@ local function Log(msg, category)
     end
 end
 
+-- Native numeric state is authoritative; HUD parsing is a compatibility fallback.
+local NativeStats = game:GetService("ReplicatedStorage"):FindFirstChild("Remote")
+NativeStats = NativeStats and NativeStats:FindFirstChild("UpdIngameStats")
+if NativeStats and NativeStats:IsA("RemoteEvent") then
+    AddConnection(NativeStats.OnClientEvent:Connect(function(stats)
+        if CleanedUp or not IsLaunchCurrent() then return end
+        local rate = Timeline.gameRate(stats)
+        if rate then NumericGameRate = rate; DynamicTimeScale = 1 / rate end
+    end))
+    pcall(function() NativeStats:FireServer() end)
+end
 -- // MAP EVENT LISTENER INTEGRATION //
 task.spawn(function()
     local PlayerGui = LP:WaitForChild("PlayerGui", 10)
@@ -92,13 +106,14 @@ task.spawn(function()
 
     if MapEventInfo and not CleanedUp then
         local function updateEvents()
-            if CleanedUp then return end
+            if CleanedUp or not IsLaunchCurrent() or NumericGameRate then return end
             local previous = DynamicTimeScale
             DynamicTimeScale = Timeline.eventModifier(MapEventInfo.Text)
             if previous ~= DynamicTimeScale then
                 Log(string.format("Map event speed: %.2fx", 1 / DynamicTimeScale), "Highlight")
             end
         end
+        RefreshHudRate = updateEvents
         updateEvents()
         AddConnection(MapEventInfo:GetPropertyChangedSignal("Text"):Connect(updateEvents))
     end
@@ -160,19 +175,24 @@ local function IsInWater(Position)
 end
 
 -- // ANIMATION HELPERS //
-local Animate, OriginalPlayAnim
+if not IsLaunchCurrent() then return end
+local Animate, OriginalPlayAnim, AnimationCharacter
+local RestoreAnimation
 local SuccessHook, Err = pcall(function()
     local character = LP.Character or LP.CharacterAdded:Wait()
+    AnimationCharacter = character
     local AnimateScript = assert(character:WaitForChild("Animate", 10), "Animate unavailable")
+    assert(IsLaunchCurrent(), "Launch cancelled")
     Animate = getsenv(AnimateScript)
     OriginalPlayAnim = assert(type(Animate.playAnimation) == "function" and Animate.playAnimation, "Animation API changed")
 
     -- Cache function globally so re-executions can restore it BEFORE capturing the empty dummy function
-    getgenv().TAS_RestoreAnim = function()
+    RestoreAnimation = function()
         if Animate and OriginalPlayAnim then
             Animate.playAnimation = OriginalPlayAnim
         end
     end
+    getgenv().TAS_RestoreAnim = RestoreAnimation
 end)
 
 if not SuccessHook or not Animate then
@@ -184,20 +204,20 @@ end
 local function toggleSlide(newValue)
     if not LP.Character then return end
     if newValue == true then
-        if LP.Character:FindFirstChild("HumanoidRootPart") then LP.Character.HumanoidRootPart.Size = NewV(2, 1, 1) end
-        if LP.Character:FindFirstChild("FE2_Hitbox") then LP.Character.FE2_Hitbox.Size = NewV(2, 1, 1) end
-        if LP.Character:FindFirstChild("Humanoid") then LP.Character.Humanoid.HipHeight = -1.5 end
+        if LP.Character:FindFirstChild("HumanoidRootPart") then PhysicalOverrides.set(LP.Character.HumanoidRootPart,"Size",NewV(2,1,1)) end
+        if LP.Character:FindFirstChild("FE2_Hitbox") then PhysicalOverrides.set(LP.Character.FE2_Hitbox,"Size",NewV(2,1,1)) end
+        if LP.Character:FindFirstChild("Humanoid") then PhysicalOverrides.set(LP.Character.Humanoid,"HipHeight",-1.5) end
     else
-        if LP.Character:FindFirstChild("HumanoidRootPart") then LP.Character.HumanoidRootPart.Size = NewV(2, 2, 1) end
-        if LP.Character:FindFirstChild("FE2_Hitbox") then LP.Character.FE2_Hitbox.Size = NewV(2, 2, 1) end
-        if LP.Character:FindFirstChild("Humanoid") then LP.Character.Humanoid.HipHeight = 0 end
+        PhysicalOverrides.restoreAll()
     end
     if LP.Character and LP.Character:FindFirstChild("Animate") and LP.Character.Animate:FindFirstChild("Sliding") then
         LP.Character.Animate.Sliding:Fire(newValue)
     end
 end
-local OriginalAutoRotate
+local OriginalAutoRotate, PlaybackHumanoid
 
+if not IsLaunchCurrent() then return end
+getgenv().FloodGUIPlayerOwner = IsLaunchCurrent
 getgenv().IsTASPlaying = true
 getgenv().TASCurrentMoveDir = Vector3.new(0,0,0)
 
@@ -235,8 +255,11 @@ local function Cleanup(resetCharacter)
     CleanedUp = true
     pcall(function() INPUT:Destroy() end)
     if PlayerUI then pcall(PlayerUI.Destroy); PlayerUI = nil end
-    getgenv().IsTASPlaying = false
-    getgenv().TASCurrentMoveDir = Vector3.zero
+    if getgenv().FloodGUIPlayerOwner == IsLaunchCurrent then
+        getgenv().IsTASPlaying = false
+        getgenv().TASCurrentMoveDir = Vector3.zero
+        getgenv().FloodGUIPlayerOwner = nil
+    end
 
     -- Reset state variables on cleanup
     IsSliding = false
@@ -254,19 +277,20 @@ local function Cleanup(resetCharacter)
     table.clear(Connections)
     if getgenv().TASConnections == Connections then getgenv().TASConnections = nil end
 
-    if getgenv().TAS_RestoreAnim then
-        pcall(getgenv().TAS_RestoreAnim)
-        getgenv().TAS_RestoreAnim = nil
+    if RestoreAnimation then
+        pcall(RestoreAnimation)
+        if getgenv().TAS_RestoreAnim == RestoreAnimation then getgenv().TAS_RestoreAnim = nil end
     end
 
-    if LP.Character then
+    if LP.Character and LP.Character == AnimationCharacter then
         if LP.Character:FindFirstChild("Animate") and LP.Character.Animate:FindFirstChild("ToggleSwim") then
             pcall(function() LP.Character.Animate.ToggleSwim:Fire(false) end)
         end
-        if LP.Character:FindFirstChild("Humanoid") and OriginalAutoRotate ~= nil then
-            LP.Character.Humanoid.AutoRotate = OriginalAutoRotate
-        end
         pcall(toggleSlide, false)
+    end
+    PhysicalOverrides.restoreAll()
+    if PlaybackHumanoid and PlaybackHumanoid.Parent and OriginalAutoRotate ~= nil then
+        PlaybackHumanoid.AutoRotate = OriginalAutoRotate
     end
 
     if resetCharacter and LP.Character and LP.Character:FindFirstChild("Humanoid") then
@@ -275,14 +299,14 @@ local function Cleanup(resetCharacter)
 
         task.spawn(function()
             local newChar = LP.CharacterAdded:Wait()
-            if getgenv().FloodGUIStopPlayer ~= Cleanup or sharedState.AutoPlay == false then return end
+            if not IsLaunchCurrent() or getgenv().FloodGUIStopPlayer ~= Cleanup or sharedState.AutoPlay == false then return end
             local newRoot = newChar:WaitForChild("HumanoidRootPart", 10)
             local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remote", 10)
             local Remote = remotes and remotes:WaitForChild("AddedWaiting", 10)
             if not Remote then return end
 
             while newChar and newChar.Parent and newRoot and newRoot.Parent
-                and getgenv().FloodGUIStopPlayer == Cleanup and sharedState.AutoPlay ~= false do
+                and IsLaunchCurrent() and getgenv().FloodGUIStopPlayer == Cleanup and sharedState.AutoPlay ~= false do
                 local dist = (newRoot.Position - LiftCheckPos).Magnitude
                 if dist <= 30 then
                     print("[TAS] Entered lift. Waiting for map to load...")
@@ -294,10 +318,15 @@ local function Cleanup(resetCharacter)
             end
         end)
     end
+    Own(nil)
 end
 
 -- // RESET & REMOVAL SAFETY INJECTION //
 getgenv().FloodGUIStopPlayer = Cleanup
+Own(function() Cleanup(false) end)
+AddConnection(RS.Heartbeat:Connect(function()
+    if not IsLaunchCurrent() then Cleanup(false) end
+end))
 if LP.Character and LP.Character:FindFirstChild("Humanoid") then
     AddConnection(LP.Character.Humanoid.Died:Connect(function() Cleanup(false) end))
 end
@@ -328,7 +357,7 @@ while not Map and not CleanedUp do
     while ConditionsMet and not Map and not CleanedUp do
         task.wait(0.1)
 
-        local FoundMap = Multi:FindFirstChild("NewMap")
+        local FoundMap = Multi:FindFirstChild("NewMap") or Multi:FindFirstChild("Map")
         if FoundMap then
             Map = FoundMap
             break
@@ -353,13 +382,19 @@ if CleanedUp or not Map then return end
 local realMapName = Map:WaitForChild('Settings'):GetAttribute("MapName")
 local mapName = HttpService:UrlEncode(realMapName)
 
-local decoded, TAS = pcall(Recordings.loadMap, realMapName)
+local decoded, TAS, recordingMetadata = pcall(Recordings.loadMap, realMapName)
 if not decoded then
     Log("Cannot load recording: " .. tostring(TAS), "Error")
     Cleanup(true)
     return
 end
 if CleanedUp then return end
+if not IsLaunchCurrent() then Cleanup(false); return end
+local compatible, reason = Timeline.compatible(recordingMetadata, realMapName)
+if not compatible then Log(reason, "Error"); Cleanup(false); return end
+if recordingMetadata and (recordingMetadata.timestampRepairs or 0) > 0 then
+    Log("Legacy timestamp jitter normalized in memory (" .. recordingMetadata.timestampRepairs .. " frames).", "Warning")
+end
 if type(TAS) ~= "table" or #TAS == 0 then
     Log("Recording contains no playable frames.", "Error")
     Cleanup(false)
@@ -373,6 +408,11 @@ local OriginalFrameCount = #TAS
 Log("Loaded run for " .. realMapName .. " (" .. OriginalFrameCount .. " frames).", "Info")
 repeat task.wait() until Map.Name == "Map" or CleanedUp
 if CleanedUp then return end
+if not IsLaunchCurrent() then Cleanup(false); return end
+NumericGameRate = nil
+DynamicTimeScale = 1
+if RefreshHudRate then RefreshHudRate() end
+if NativeStats then pcall(function() NativeStats:FireServer() end) end
 
 local SpawnPoint = nil
 for _,v in ipairs(Map:GetChildren()) do
@@ -425,7 +465,8 @@ while (RootPart.Anchored == true) or (Humanoid.WalkSpeed <= 0) do
 end
 
 if LP.Character and LP.Character:FindFirstChild("Humanoid") then
-    OriginalAutoRotate = LP.Character.Humanoid.AutoRotate
+    PlaybackHumanoid = LP.Character.Humanoid
+    OriginalAutoRotate = PlaybackHumanoid.AutoRotate
     LP.Character.Humanoid.AutoRotate = false
 end
 
@@ -446,8 +487,8 @@ local function activateAnimation(AnimData, Elapsed)
     local checkSubmerged = IsInWater(RootPart.Position + Vector3.new(0, 1, 0))
 
     -- Native-Derived Scaling Slide Duration
-    local gameSpeedMultiplier = TimeModifier * DynamicTimeScale
-    local nativeSlideDuration = 0.5 / gameSpeedMultiplier
+    -- Elapsed already uses authored time; convert playback rate exactly once.
+    local nativeSlideDuration = 0.5
 
     -- MANUAL KEY OVERRIDES (Z = Zipline/Swing, S = Slide)
     if IsManualZipline then
@@ -658,6 +699,7 @@ PlayerUI = Runtime.run("ui/player.luau")({
     mapName=realMapName, smoothness=SwimSmoothness, track=AddConnection, pause=TriggerPauseToggle,
     zipline=SetManualZipline, slide=SetManualSlide,
     setSpeed=function(multiplier) TimeModifier = 1 / Timeline.speed(multiplier, 1 / TimeModifier) end,
+    setSwimSmoothing=function(value) SmoothSwimOrientation = value == true end,
     setSmoothness=function(value) SwimSmoothness=value end,
     stop=function() sharedState.AutoPlay=false; Cleanup(false) end,
     status=function() return {finished=CleanedUp, elapsed=VisualElapsed, duration=TAS[#TAS].time,
@@ -667,6 +709,7 @@ PlayerUI = Runtime.run("ui/player.luau")({
 
 local MainLoop
 MainLoop = RS.Heartbeat:Connect(function()
+    if not IsLaunchCurrent() then Cleanup(false); return end
     if not RootPart or not RootPart.Parent or not Humanoid or not Humanoid.Parent or CleanedUp then
         if MainLoop then MainLoop:Disconnect() end
         if not CleanedUp then
@@ -695,7 +738,7 @@ MainLoop = RS.Heartbeat:Connect(function()
 
     RenderedFrames = RenderedFrames + 1
 
-    VisualElapsed = VisualElapsed + (Delta * (1 / (TimeModifier * DynamicTimeScale)))
+    VisualElapsed = Timeline.advance(VisualElapsed, Delta, 1 / TimeModifier, 1 / DynamicTimeScale)
 
     local liveWeld = RootPart:FindFirstChild("WalljumpWeld_Live")
     if liveWeld then liveWeld:Destroy() end
@@ -743,11 +786,11 @@ MainLoop = RS.Heartbeat:Connect(function()
     end
 
     -- Swimming Rotation Smoothing vs Raw Foot Movement application
-    if IsCurrentlySwimming and TargetVelocity.Magnitude > 0.5 then
+    if SmoothSwimOrientation and IsCurrentlySwimming and TargetVelocity.Magnitude > 0.5 then
         if not SmoothSwimDirection then
             SmoothSwimDirection = TargetVelocity.Unit
         else
-            SmoothSwimDirection = SmoothSwimDirection:Lerp(TargetVelocity.Unit, SwimSmoothness).Unit
+            SmoothSwimDirection = Timeline.smoothDirection(SmoothSwimDirection, TargetVelocity.Unit, SwimSmoothness, Delta)
         end
         RootPart.CFrame = NewC(TargetCFrame.Position, TargetCFrame.Position + SmoothSwimDirection)
     else
@@ -768,7 +811,7 @@ MainLoop = RS.Heartbeat:Connect(function()
     if atEnd and not FinishedRun then
         FinishedRun = true
         VisualElapsed = TAS[#TAS].time
-        Log("Run completed successfully!", "Success")
+        Log("Playback ended. Game completion is confirmed separately by FE2.", "Info")
         Cleanup(false)
     end
 end)

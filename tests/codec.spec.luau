@@ -1,5 +1,7 @@
 local Codec = require("../TAS/codec")
-local fixtures = require("./recording-fixtures")
+local fixtures = table.clone(require("./recording-fixtures"))
+-- These are independent representative frames, not an authored timeline.
+table.sort(fixtures,function(a,b) return a.time<b.time end)
 local function close(a, b)
 	assert(math.abs(a - b) <= 0.0001 + math.abs(a) * 0.000001, tostring(a) .. " differs from " .. tostring(b))
 end
@@ -49,6 +51,22 @@ local frame = {
 	VVelocity = { 7, 8, 9 },
 	AAnimation = { "walk", 0.5 },
 }
+local earlier=table.clone(frame);earlier.time=0
+local later=table.clone(frame);later.time=2
+assert(not pcall(Codec.validate,{earlier,later,frame}),"Out-of-order timeline accepted")
+local negative=table.clone(frame);negative.time=-1
+assert(not pcall(Codec.validate,{negative}),"Negative time accepted")
+local jitter=table.clone(frame);jitter.time=0.995
+local normalized,repairs=Codec.normalizeLegacy({earlier,frame,jitter})
+assert(repairs==1 and normalized[3].time==1 and jitter.time==0.995,"Legacy repair must preserve source frames")
+assert(not pcall(Codec.normalizeLegacy,{earlier,later,frame}),"Large reversals must require an explicit repair")
+assert(pcall(Codec.validate,{frame,frame}),"Equal timestamps are a supported last-sample-wins boundary")
+local third=table.clone(frame);third.time=1.01
+local legacyBuffer=buffer.fromstring(Codec.encodeBinary({earlier,frame,third}))
+-- Independent v3 layout: 14-byte empty-metadata header and 87-byte walk frames.
+buffer.writef64(legacyBuffer,14+87*2,0.995)
+local repairedBinary,binaryInfo=Codec.decodeBinary(buffer.tostring(legacyBuffer))
+assert(binaryInfo.timestampRepairs==1 and repairedBinary[3].time==1,"Old binary revisions need the same bounded jitter migration")
 local v3 = Codec.encodeBinary({ frame })
 -- Independent v2 fixture: same header/frames but no per-frame v3 flags.
 local v2 = v3:sub(1, 4) .. string.char(2) .. v3:sub(6, -2)

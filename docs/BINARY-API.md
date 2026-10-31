@@ -30,6 +30,8 @@ local translated = codec.convert(bytes, "binary", metadata)
 
 Frames retain the established JSON model: `time`, `CCFrame`, `CCameraCFrame`, `VVelocity`, optional `AAnimation` and optional `AAnimationChanged`. This is the translation boundary between the legacy recordings and the integrated creator/player. Positions and camera coordinates retain their map-relative convention.
 
+New writes require nonnegative, nondecreasing timestamps. Readers normalize at most 10 ms of legacy backward jitter without changing sample order or disk bytes; returned metadata includes `timestampRepairs`. Larger reversals are rejected with the affected frame number. Equal timestamps are supported. Player and creator preview check a nonempty `mapName` against the current map when metadata supplies one. The format does not contain the creator session's environment capture or a complete physics/action state.
+
 ## Binary format
 
 All numbers use the Luau buffer API's little-endian representation. The reader accepts experimental FE2T version 2 and the extended version 3 written by this repository. Old experimental players do not understand version 3; use FloodGUI's player or export JSON.

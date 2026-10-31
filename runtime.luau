@@ -70,6 +70,16 @@ return function(root, options)
 		assert(chunk, err)
 		return chunk(...)
 	end
+	function Runtime.runScoped(isCurrent, relative, ...)
+		assert(type(isCurrent) == "function" and isCurrent(), "Launch cancelled")
+		local source = Runtime.read(relative)
+		-- Reads can yield. Stop/unload invalidates ownership before execution.
+		assert(isCurrent(), "Launch cancelled")
+		local chunk, err = loadstring(source, "@" .. Runtime.path(relative))
+		assert(chunk, err)
+		assert(isCurrent(), "Launch cancelled")
+		return chunk(...)
+	end
 	function Runtime.catalog()
 		return game:GetService("HttpService"):JSONDecode(Runtime.read("tas-catalog.json"))
 	end

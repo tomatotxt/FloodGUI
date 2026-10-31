@@ -21,6 +21,9 @@ assert(chosen.ID==1)
 assert(Automation.select(maps,nil,{Mode="Farm",TargetMapName="B",EnforceDifficulty=true,TargetDifficulty="Easy"},function() return false end)==nil)
 chosen=Automation.select(maps,nil,{Mode="Farm",PreferMissingTAS=true},function(name) return name=="A" end)
 assert(chosen.ID==2)
+maps[1].cooldown=true
+assert(Automation.select({maps[1]},nil,{Mode="Farm"},function()return true end)==nil)
+assert(Automation.select({maps[1]},{mapID=1,voteCount=1},{Mode="Farm"},function()return true end)==maps[1],"Existing vote eligibility differs from a new cooldown vote")
 local Advanced = require("../advanced")
 local function signal() return {Connect=function(_,cb) return {Disconnect=function() end, callback=cb} end} end
 local folder = {children={}}

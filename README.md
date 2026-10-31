@@ -65,4 +65,6 @@ See [recording API](docs/BINARY-API.md), [integration review](docs/FEATURE-REVIE
 
 ## Validation limits
 
+See [local reliability changes](docs/RELIABILITY-FIXES.md) for the current working-copy fixes and regression coverage. Use the local-only loader to exercise unpublished changes. Native action timelines are not dispatched by the editor; captured map and lighting effects follow the seekable editor clock. Files remain trajectory recordings rather than complete portable game-state snapshots.
+
 Static compilation, conversion roundtrips, mocked feature failures, local/remote loading and packaged-path checks are automated. Roblox gameplay, real executor behavior and server-side acceptance were not tested here. Capability checks catch missing or changed APIs; they cannot guarantee compatibility with a future game update.

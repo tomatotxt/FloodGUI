@@ -18,6 +18,10 @@ function TAS_UI.Create()
 	result.MapEventInfo = UI.label(controls, "Waiting for map…")
 	result.SavestatesCount = UI.label(controls, "States: 0")
 	result.FrameCount = UI.label(controls, "Frames: 0")
+	controls:Paragraph({
+		Name = "Checkpoint scope",
+		Content = "Rewind restores recorded poses and captured map/lighting effects. Files store trajectories, not a complete game simulation; native player-action timelines are not dispatched.",
+	})
 	local function action(page, id, name, description, icon, primary)
 		result.Buttons[id] = page:Button({
 			Name = name,

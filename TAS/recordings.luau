@@ -1,7 +1,18 @@
 return function(Runtime)
+	-- Main, creator and library construct this factory independently. Reservations
+	-- must belong to their shared runtime, including while writefile yields.
+	Runtime.recordingReservations = Runtime.recordingReservations or {}
+	-- A reload can overlap a yielding save from the previous runtime too.
+	if type(getgenv)=="function" and type(Runtime.root)=="string" then
+		local shared=getgenv()
+		shared.FloodGUIRecordingReservations=shared.FloodGUIRecordingReservations or {}
+		local rootKey=Runtime.root:gsub("\\","/"):lower()
+		shared.FloodGUIRecordingReservations[rootKey]=shared.FloodGUIRecordingReservations[rootKey] or Runtime.recordingReservations
+		Runtime.recordingReservations=shared.FloodGUIRecordingReservations[rootKey]
+	end
+	local pending = Runtime.recordingReservations
 	local Codec = Runtime.run("TAS/codec.luau")
 	local API = { codec = Codec }
-	local pending = {}
 	local function clean(name)
 		assert(type(name) == "string", "Expected a map/file name")
 		name = name:match("^%s*(.-)%s*$")

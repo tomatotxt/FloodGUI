@@ -17,6 +17,15 @@ local repeated={{time=0,id=1},{time=0,id=2},{time=1,id=3}}
 assert(Timeline.sample(repeated,0).id==2)
 assert(Timeline.speed(0)==0.1 and Timeline.speed(100)==20)
 assert(Timeline.speed(0/0)==1 and Timeline.speed(math.huge)==1 and Timeline.speed("fast",2)==2)
+assert(Timeline.gameRate({gamespeedMultiplier=1.5})==1.5)
+assert(Timeline.gameRate({gamespeedMultiplier=0})==nil and Timeline.gameRate({gamespeedMultiplier=0/0})==nil)
+assert(Timeline.advance(0,0.25,2,1)==0.5 and Timeline.advance(0,1,0.5,1)==0.5)
+assert(Timeline.advance(0,0.25,1,2)==0.5,"Game and user rates must each be applied once")
+assert(not Timeline.compatible({mapName="Other"},"Test") and Timeline.compatible({mapName="Test"},"Test"))
+assert(Timeline.compatible({format="json"},"Test"),"Legacy files without identity remain importable")
+local original={Dot=function()return -1 end}
+local opposite={}
+assert(Timeline.smoothDirection(original,opposite,0.04,1/60)==opposite,"Exact reversal must not stick")
 assert(Timeline.eventModifier("")==1 and Timeline.eventModifier("No events")==1)
 assert(math.abs(Timeline.eventModifier('<font color="#ff0000">Speed Up</font>')-1/1.1225)<1e-10)
 assert(math.abs(Timeline.eventModifier("Slowdown / Speedup")-1/(1.1225*(1-0.1091)))<1e-10)

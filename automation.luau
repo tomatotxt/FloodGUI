@@ -13,7 +13,8 @@ function Automation.select(maps, vote, options, hasFile)
     for _, map in pairs(maps) do
         local name = tostring(map.name or ""):gsub("\160", " "):match("^%s*(.-)%s*$")
         local allowed = not options.EnforceDifficulty or (ranks[map.difficulty] or 999) <= (ranks[options.TargetDifficulty] or 999)
-        if map.displayMap and allowed and (target == "" or name:lower() == target) then
+        local alreadyVoted = vote and vote.mapID == map.ID
+        if map.displayMap and allowed and (not map.cooldown or alreadyVoted) and (target == "" or name:lower() == target) then
             local exists = hasFile(name)
             local eligible = options.Mode == "Record" and not exists
                 or options.Mode == "Play" and exists

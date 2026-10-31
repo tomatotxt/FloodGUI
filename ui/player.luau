@@ -9,7 +9,7 @@ return function(context)
 	local progress = playback:Progress({ Name = "Recording progress", Default = 0 })
 	local pause = playback:Toggle({
 		Name = "Pause playback",
-		Desc = "Pause immediately; resume from the same point.",
+		Desc = "Hold the player at this point. Live map hazards and server time continue.",
 		Default = false,
 		Callback = context.pause,
 	})
@@ -44,9 +44,15 @@ return function(context)
 		Default = context.smoothness,
 		Callback = context.setSmoothness,
 	})
+	options:Toggle({
+		Name = "Smooth swim orientation",
+		Desc = "Optional presentation aid. Off preserves the recorded orientation.",
+		Default = false,
+		Callback = context.setSwimSmoothing or function() end,
+	})
 	options:Paragraph({
 		Name = "Map events",
-		Content = "Playback still follows map speed-up and slow-down events. The status panel shows the effective speed.",
+		Content = "Playback follows the game's numeric speed when available. Live map and server state are not rewound; use a recording made for the same layout.",
 	})
 	local _, releaseZipline = UI.hold(
 		manual,

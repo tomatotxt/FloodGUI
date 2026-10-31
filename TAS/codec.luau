@@ -22,8 +22,11 @@ function Codec.validate(frames)
 		entries += 1
 	end
 	assert(entries == count, "Frames must be a continuous array")
-	for _, frame in ipairs(frames) do
+	local previous = 0
+	for index, frame in ipairs(frames) do
 		assert(type(frame) == "table" and finite(frame.time), "Invalid frame timestamp")
+		assert(frame.time >= previous, "Recording time goes backwards at frame " .. index)
+		previous = frame.time
 		vector(frame.CCFrame, 6, "CCFrame")
 		vector(frame.CCameraCFrame, 6, "CCameraCFrame")
 		vector(frame.VVelocity, 3, "VVelocity")
@@ -38,6 +41,25 @@ function Codec.validate(frames)
 		assert(frame.AAnimationChanged == nil or finite(frame.AAnimationChanged), "Invalid animation marker")
 	end
 	return frames
+end
+-- Preserve the order of legacy poses. A few bundled files contain sub-frame
+-- timestamp jitter: clamp at most 10 ms, report it, and never change disk bytes.
+-- Larger reversals are edits/corruption requiring an explicit user repair.
+function Codec.normalizeLegacy(frames)
+	assert(type(frames) == "table", "Expected recording frames")
+	local result, previous, repairs = table.clone(frames), 0, 0
+	for index, frame in ipairs(frames) do
+		assert(type(frame) == "table" and finite(frame.time), "Invalid frame timestamp")
+		assert(frame.time >= 0, "Recording time cannot be negative")
+		if frame.time < previous then
+			assert(previous - frame.time <= 0.01, "Recording time goes backwards at frame " .. index)
+			result[index] = table.clone(frame)
+			result[index].time = previous
+			repairs += 1
+		end
+		previous = result[index].time
+	end
+	return Codec.validate(result), repairs
 end
 local function quaternion(cf)
 	local sx, cx = math.sin(cf[4] / 2), math.cos(cf[4] / 2)
@@ -174,8 +196,9 @@ function Codec.decodeBinary(bytes)
 		frames[index] = frame
 	end
 	assert(pos == #bytes, "Unexpected trailing recording data")
-	return Codec.validate(frames),
-		{ version = version, fps = fps, author = author, mapName = mapName, format = "binary" }
+	local normalized, repairs = Codec.normalizeLegacy(frames)
+	return normalized,
+		{ version = version, fps = fps, author = author, mapName = mapName, format = "binary", timestampRepairs = repairs }
 end
 function Codec.decode(bytes, httpService)
 	assert(type(bytes) == "string" and #bytes > 0, "Expected nonempty recording bytes")
@@ -185,8 +208,8 @@ function Codec.decode(bytes, httpService)
 	if bytes:sub(1, 3) == "\239\187\191" then
 		bytes = bytes:sub(4)
 	end
-	local frames = (httpService or game:GetService("HttpService")):JSONDecode(bytes)
-	return Codec.validate(frames), { format = "json", fps = 60 }
+	local frames, repairs = Codec.normalizeLegacy((httpService or game:GetService("HttpService")):JSONDecode(bytes))
+	return frames, { format = "json", fps = 60, timestampRepairs = repairs }
 end
 function Codec.encodeJSON(frames, httpService)
 	return (httpService or game:GetService("HttpService")):JSONEncode(Codec.validate(frames))

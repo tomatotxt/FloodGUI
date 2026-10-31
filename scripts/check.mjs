@@ -17,15 +17,21 @@ const catalog=JSON.parse(fs.readFileSync(path.join(root,'tas-catalog.json')));
 const actual=files.filter(file=>file.startsWith(path.join(root,'TAS FILES')+path.sep)&&/\.(json|fe2tomatas)$/.test(file)).map(file=>path.basename(file)).sort();
 assert.deepEqual(catalog.map(x=>x.name).sort(),actual,'Run scripts/catalog.mjs after changing bundled recordings');
 let frames=0;
+const timingCases=[];
 for(const item of catalog){
   assert.equal(item.path,`TAS FILES/${item.name}`);
   const bytes=fs.readFileSync(path.join(root,item.path));
   if(item.name.endsWith('.json')){
     const data=JSON.parse(bytes);assert(Array.isArray(data)&&data.length>0,item.name);frames+=data.length;
+    let previous=0, repairs=0;
     for(const frame of data){
       for(const [field,size] of [['CCFrame',6],['CCameraCFrame',6],['VVelocity',3]])assert(Array.isArray(frame[field])&&frame[field].length===size&&frame[field].every(Number.isFinite),`${item.name}: ${field}`);
       assert(Number.isFinite(frame.time),item.name);
+      assert(frame.time>=0,`${item.name}: negative timestamp`);
+      if(frame.time<previous){assert(previous-frame.time<=0.01,`${item.name}: unsupported timestamp reversal`);repairs++;}
+      previous=Math.max(previous,frame.time);
     }
+    if(repairs)timingCases.push({name:item.name,times:data.map(frame=>frame.time),repairs});
   }else{assert.equal(bytes.subarray(0,4).toString(),'FE2T');assert([2,3].includes(bytes[4]));}
 }
 for(const file of scripts.filter(file=>!file.includes(`${path.sep}tests${path.sep}`))){
@@ -90,6 +96,20 @@ try{
   const enginesFile=path.join(temp,'tas-engines.spec.luau');
   fs.writeFileSync(enginesFile,`local test=assert(loadstring(${literal(enginesTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'TAS/CREATOR/creator.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'TAS/PLAYER/newtasplayer.luau'),'utf8'))})`);
   execFileSync(tool('luau'),[enginesFile],{stdio:'inherit'});
+  const appTest=fs.readFileSync(path.join(root,'tests/app-harness.luau'),'utf8');
+  const appFile=path.join(temp,'app.spec.luau');
+  fs.writeFileSync(appFile,`local test=assert(loadstring(${literal(appTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'FloodGUI.luau'),'utf8'))})`);
+  execFileSync(tool('luau'),[appFile],{stdio:'inherit'});
+  const orderFile=path.join(temp,'legacy-time.spec.luau');
+  const orderCases=timingCases.map(item=>`do local function check()
+local zero={0,0,0,0,0,0};local velocity={0,0,0};local frames={}
+for _,t in ipairs({${item.times.join(',')}})do table.insert(frames,{time=t,CCFrame=zero,CCameraCFrame=zero,VVelocity=velocity})end
+local normalized,repairs=Codec.normalizeLegacy(frames)
+assert(repairs==${item.repairs},${JSON.stringify(item.name)})
+for i=2,#normalized do assert(normalized[i].time>=normalized[i-1].time)end
+end check() end`).join('\n');
+  fs.writeFileSync(orderFile,`local Codec=assert(loadstring(${literal(fs.readFileSync(path.join(root,'TAS/codec.luau'),'utf8'))}))()\n${orderCases}\nprint('PASS: actual codec normalizes timestamp jitter for all ${timingCases.length} affected bundled runs without rewriting them')`);
+  execFileSync(tool('luau'),[orderFile],{stdio:'inherit'});
   const serviceTest=fs.readFileSync(path.join(root,'tests/ui-service-harness.luau'),'utf8');
   const serviceFile=path.join(temp,'ui-service.spec.luau');
   fs.writeFileSync(serviceFile,`local test=assert(loadstring(${literal(serviceTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'ui/service.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'TAS/CREATOR/touch-controls.luau'),'utf8'))})`);

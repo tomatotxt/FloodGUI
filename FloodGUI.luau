@@ -22,6 +22,7 @@ if getgenv().FloodGUISession then
 end
 local Session = {Cancelled = false}
 getgenv().FloodGUISession = Session
+local Launches = Runtime.run("launches.luau")(Session)
 if getgenv().FloodGUI_Connections or getgenv().TomatoConnections then
     print("[FloodGUI]: Overriding previous instance...")
     for _, connection in pairs(getgenv().FloodGUI_Connections or {}) do
@@ -36,14 +37,15 @@ if getgenv().FloodGUI_Connections or getgenv().TomatoConnections then
     task.wait(0.2)
 end
 
-getgenv().FloodGUI_Connections = {}
+local SessionConnections = {}
+getgenv().FloodGUI_Connections = SessionConnections
 getgenv().TomatoConnections = getgenv().FloodGUI_Connections -- Aliased for clean environment overrides
 getgenv().TasFileCache = {}
 getgenv().TomatoAutoFarm = false
 getgenv().IsTASPlaying = false
 
 local function TrackConnection(connection)
-    table.insert(getgenv().FloodGUI_Connections, connection)
+    table.insert(SessionConnections, connection)
     return connection
 end
 
@@ -103,7 +105,7 @@ local State = {
     AntiAFK = true,
     RebirthInterval = 60,
     ChallengeInterval = 600,
-    MovementOverrides = true,
+    MovementOverrides = false,
     InterfaceScale = 1,
     Notifications = true,
     PlaybackSpeed = 1,
@@ -271,36 +273,69 @@ local function HasTASFile(rawName)
 end
 
 -- Auto-collect was independent of farming in main/testing.
+local ActiveCollectionCleanup
+local function CancelCollection()
+    if ActiveCollectionCleanup then ActiveCollectionCleanup() end
+end
 local function CollectMapItems(Map)
-    if not State.AutoCollect then return end
+    if Session.Cancelled or getgenv().TAS_Active or getgenv().IsTASPlaying then return end
+    if not State.AutoCollect or ActiveCollectionCleanup then return end
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    local rescue = Map:FindFirstChild("_Rescue", true)
-    for _, part in pairs({Map:FindFirstChild("_LostPage", true), rescue and rescue:FindFirstChild("Contact")}) do
-        if part:IsA("BasePart") then
-            local original = root.CFrame
-            root.CFrame = part.CFrame
-            task.wait(0.1)
-            if root.Parent then root.CFrame = original end
-        end
+    local original, finished = root.CFrame, false
+    local function release()
+        if finished then return end
+        finished=true
+        if root.Parent and LocalPlayer.Character==char then root.CFrame=original end
+        if ActiveCollectionCleanup==release then ActiveCollectionCleanup=nil end
     end
+    ActiveCollectionCleanup=release
+    local ok,err=pcall(function()
+        local rescue = Map:FindFirstChild("_Rescue", true)
+        for _, part in pairs({Map:FindFirstChild("_LostPage", true), rescue and rescue:FindFirstChild("Contact")}) do
+            if finished or Session.Cancelled or getgenv().TAS_Active or getgenv().IsTASPlaying then return end
+            if part:IsA("BasePart") then
+                root.CFrame = part.CFrame
+                task.wait(0.1)
+                if finished then return end
+                if root.Parent then root.CFrame=original end
+            end
+        end
+    end)
+    release()
+    if not ok then Alert("Collection stopped: "..tostring(err),"Warning") end
 end
 
 local function ExecuteSecondaryScript(modeType)
+    if Session.Cancelled then return end
     Alert("Executing TAS Script for Mode: " .. modeType, "Info")
     if modeType == "Record" then
         if getgenv().TAS_Active then Alert("Creator already active.", "Warning"); return end
+        CancelCollection()
         State.AutoPlay, State.AutoFarm, State.SelectTASMaps = false, false, false
+        State.AutoCollect, State.AutoRebirth = false, false
         getgenv().TomatoAutoFarm = false
         if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
-        local ok, err = pcall(Runtime.run, CONFIG.TAS_CREATOR_PATH)
-        if not ok then
+        Noclip(false)
+        Overrides.restoreAll()
+        local isCurrent, own = Launches.begin("creator")
+        local ok, err = pcall(Runtime.runScoped, isCurrent, CONFIG.TAS_CREATOR_PATH, isCurrent, own)
+        if not ok and isCurrent() then
+            Launches.cancel("creator")
             getgenv().TAS_Active = false
             Alert("TAS Creator stopped: " .. tostring(err), "Error")
         end
     elseif modeType == "Play" then
-        Runtime.run(CONFIG.TAS_PLAYER_PATH)
+        if getgenv().TAS_Active then return end
+        CancelCollection()
+        local isCurrent, own = Launches.begin("player")
+        getgenv().FloodGUIPlayerOwner = isCurrent
+        own(function()
+            if getgenv().FloodGUIPlayerOwner==isCurrent then getgenv().IsTASPlaying=false end
+        end)
+        local ok, err = pcall(Runtime.runScoped, isCurrent, CONFIG.TAS_PLAYER_PATH, isCurrent, own)
+        if not ok and isCurrent() then Launches.cancel("player");error(err) end
     end
 end
 
@@ -455,6 +490,10 @@ TrackConnection(NewMapVote.OnClientEvent:Connect(function(dataPacket)
         ExecuteSecondaryScript("Record")
     elseif State.SelectTASMaps and State.Mode == "Play" and targetMapData then
         State.AutoPlay = true
+    elseif State.SelectTASMaps and State.Mode == "Farm" and targetMapData then
+        State.AutoFarm = true
+        State.AutoPlay = false
+        getgenv().TomatoAutoFarm = true
     end
 end))
 
@@ -462,8 +501,12 @@ end))
 TrackConnection(Multiplayer.ChildAdded:Connect(function(NewMap)
     if Session.Cancelled or (NewMap.Name ~= "NewMap" and NewMap.Name ~= "Map") then return end
     Advanced.onMap(NewMap)
-    if NewMap.Name == "NewMap" then NewMap:GetPropertyChangedSignal("Name"):Wait() end
-    if Session.Cancelled or NewMap.Name ~= "Map" then return end
+    local readyDeadline=os.clock()+20
+    while NewMap.Name=="NewMap" and NewMap.Parent==Multiplayer and not Session.Cancelled and os.clock()<readyDeadline do
+        task.wait(0.05)
+    end
+    if Session.Cancelled or NewMap.Parent~=Multiplayer then return end
+    if NewMap.Name~="Map" then Alert("Map preparation timed out; waiting for the next map.","Warning");return end
     CollectMapItems(NewMap)
     if not State.AutoFarm and not State.AutoPlay then return end
 
@@ -585,6 +628,8 @@ end)
 -- Mod & Movement Loop
 TrackConnection(RunService.Heartbeat:Connect(function()
     if Session.Cancelled then return end
+    local engineOwnsCharacter = getgenv().IsTASPlaying or getgenv().TAS_Active
+    if engineOwnsCharacter then return end
     if State.Noclip then Noclip(true) end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -651,7 +696,8 @@ end))
 if type(hookmetamethod) == "function" and type(checkcaller) == "function" then
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, index)
-        if not Session.Cancelled and State.SwimEnabled and index == "Position" and tostring(self) == "HumanoidRootPart" and not checkcaller() then
+        if not Session.Cancelled and not getgenv().TAS_Active and not getgenv().IsTASPlaying
+            and State.SwimEnabled and index == "Position" and self == (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and not checkcaller() then
             return Vector3.new(-23, -153, 0)
         end
         return oldIndex(self, index)
@@ -682,6 +728,9 @@ local function SavePreferences(key)
     end)
 end
 local function StopAutomation()
+    CancelCollection()
+    Launches.cancel("player")
+    getgenv().IsTASPlaying = false
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth = false, false
     getgenv().TomatoAutoFarm = false
@@ -694,14 +743,19 @@ Session.Cleanup = function()
     if Session.Cleaned then return end
     Session.Cleaned = true
     Session.Cancelled = true
+    CancelCollection()
+    local stopPlayer, stopCreator = getgenv().FloodGUIStopPlayer, getgenv().FloodGUIStopCreator
+    Launches.cancel()
+    getgenv().IsTASPlaying = false
+    getgenv().TAS_Active = false
     if preferencesDirty then Preferences.save(State); preferencesDirty = false end
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth, State.Noclip, State.SwimEnabled = false, false, false, false
     getgenv().TomatoAutoFarm = false
     if previousCleanup then pcall(previousCleanup) end
-    if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
-    if getgenv().TAS_Active and getgenv().FloodGUIStopCreator then pcall(getgenv().FloodGUIStopCreator) end
-    for _, connection in ipairs(getgenv().FloodGUI_Connections or {}) do pcall(function() connection:Disconnect() end) end
+    if stopPlayer then pcall(stopPlayer, false) end
+    if stopCreator then pcall(stopCreator) end
+    for _, connection in ipairs(SessionConnections) do pcall(function() connection:Disconnect() end) end
     pcall(Noclip, false)
     Overrides.restoreAll()
     UI.destroy()
@@ -709,6 +763,7 @@ end
 local Interface = Runtime.run("ui/main.luau")({
     runtime=Runtime, ui=UI, state=State, advanced=Advanced, recordings=Recordings, session=Session,
     noclip=Noclip, alert=Alert, execute=ExecuteSecondaryScript, stop=StopAutomation,
+    cancelPlayerLaunch=function() Launches.cancel("player"); getgenv().IsTASPlaying = false end,
     savePreferences=SavePreferences,
     resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,
     unload=Session.Cleanup,

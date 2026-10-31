@@ -22,6 +22,34 @@ function Timeline.speed(value, fallback)
     return math.clamp(value, 0.1, 20)
 end
 
+function Timeline.gameRate(stats)
+    local value = type(stats) == "table" and stats.gamespeedMultiplier
+    if type(value) == "number" and value == value and value > 0 and value < math.huge then
+        return value
+    end
+    return nil
+end
+
+function Timeline.advance(elapsed, wallDelta, playbackRate, gameRate)
+    return elapsed + math.max(0,wallDelta) * Timeline.speed(playbackRate) * (Timeline.gameRate({gamespeedMultiplier=gameRate}) or 1)
+end
+
+function Timeline.compatible(metadata, mapName)
+    local recorded = metadata and metadata.mapName
+    if type(recorded) == "string" and recorded ~= "" and recorded ~= mapName then
+        return false, "Recording is for '" .. recorded .. "', not '" .. tostring(mapName) .. "'."
+    end
+    return true
+end
+
+function Timeline.smoothDirection(previous, target, response, dt)
+    -- Lerp followed by normalization cannot escape an exact reversal.
+    if previous:Dot(target) < -0.999 then return target end
+    local alpha = 1 - (1 - math.clamp(response, 0.001, 1)) ^ (math.max(0, dt) * 60)
+    local blended = previous:Lerp(target, alpha)
+    return blended.Magnitude > 0.00001 and blended.Unit or target
+end
+
 function Timeline.eventModifier(text)
     local modifier = 1
     -- Rich-text and plain-text HUDs are both supported. Clearing the HUD resets

@@ -13,6 +13,7 @@ return function(context)
 		end
 		State[key] = value
 		if key == "AutoFarm" then
+			if value and context.cancelPlayerLaunch then context.cancelPlayerLaunch() end
 			State.PracticeMap = nil
 			getgenv().TomatoAutoFarm = value
 			if value then
@@ -22,6 +23,12 @@ return function(context)
 				end
 			end
 		elseif key == "AutoPlay" then
+			if not value and context.cancelPlayerLaunch then context.cancelPlayerLaunch() end
+			if value and getgenv().TAS_Active then
+				State.AutoPlay = false
+				context.alert("Stop the creator before enabling playback.", "Warning")
+				return
+			end
 			if value then
 				State.AutoFarm = false
 				getgenv().TomatoAutoFarm = false

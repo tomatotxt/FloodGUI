@@ -87,5 +87,48 @@ return function(creatorSource, playerSource)
     environment.CleanedUp=true
     pause(false)
     assert(environment.PAUSED, "Stopped player must ignore late UI/input callbacks")
+
+    -- Preview must release ownership on both setup and asynchronous frame errors.
+    environment.Stopped=false
+    environment.IsViewingTAS=false
+    environment.StepInProgress=false
+    environment.IsPaused=true
+    root.Parent=character
+    root.Size="original size"
+    local humanoid={HipHeight=2,Parent=character}
+    character.FindFirstChildOfClass=function()return humanoid end
+    environment.workspace={CurrentCamera={CFrame="camera",Parent=true}}
+    environment.ClonedMap={PrimaryPart={Position=0},FindFirstChild=function()return nil end}
+    environment.Recordings={codec={validate=function(frames)assert(type(frames)=="table" and #frames>0)end}}
+    environment.Timeline={compatible=function()return true end,sample=function()error("simulated sample failure")end}
+    environment.ButtonRegistry={}
+    environment.PathLines={}
+    environment.LastMapTime=4
+    local restoredTime
+    environment.MapCapture={seek=function(t)restoredTime=t end}
+    environment.Vector3={new=function()return 0 end}
+    environment.CFrame={new=function()end,fromEulerAnglesXYZ=function()end}
+    environment.AddConnection=function(c)return c end
+    environment.UpdateMapState=function()end
+    environment.SyncButtonState=function()end
+    environment.StopPreview=nil
+    local preview=compile(functionSource(creatorSource,"PlaybackTAS",false).."\nreturn PlaybackTAS")
+    globals.ExtremeSmoothing=true;globals.TargetSmoothingFPS=0
+    preview({{time=0}})
+    assert(not environment.IsViewingTAS and environment.StopPreview==nil,"Failed setup left preview ownership acquired")
+    assert(root.Size=="original size" and restoredTime==4)
+    globals.ExtremeSmoothing=false
+    local onFrame,disconnected
+    environment.RunService.Heartbeat.Connect=function(_,fn)
+        onFrame=fn
+        return {Disconnect=function()disconnected=true end}
+    end
+    preview({{time=0}})
+    assert(environment.IsViewingTAS and onFrame)
+    onFrame()
+    assert(not environment.IsViewingTAS and environment.StopPreview==nil and disconnected,"Frame failure left preview running")
+    character.FindFirstChild=function()return nil end
+    assert(not pcall(preview,{{time=0}}) and not environment.IsViewingTAS,"Missing character acquired preview state")
     print("PASS: actual TAS held frame advance, cancellation, and immediate reversible player pause")
+    print("PASS: actual creator preview setup/frame failure rollback, dependency loss and original environment restoration")
 end

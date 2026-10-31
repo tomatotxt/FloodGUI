@@ -129,6 +129,42 @@ assert(
 onWrite = nil
 
 -- Export verification leaves the source unchanged and handles missing folders.
+local library = factory(runtime)
+local writerPath
+suspended = false
+onWrite = function(p,v)
+	if not suspended then suspended=true;coroutine.yield() end
+	files[p]=v
+end
+local creatorWriter=coroutine.create(function()
+	writerPath=api.save("Shared service",{frame},{author="Creator"})
+end)
+assert(coroutine.resume(creatorWriter) and coroutine.status(creatorWriter)=="suspended")
+local libraryPath=library.save("Shared service",{frame},{author="Library"})
+assert(coroutine.resume(creatorWriter) and coroutine.status(creatorWriter)=="dead")
+assert(writerPath~=libraryPath,"Two factories reserved the same recording path")
+assert(select(2,Codec.decodeBinary(files[runtime.path(writerPath)])).author=="Creator")
+assert(select(2,Codec.decodeBinary(files[runtime.path(libraryPath)])).author=="Library")
+onWrite=nil
+
+local sharedGlobals={}
+env.getgenv=function()return sharedGlobals end
+local previousRuntime, nextRuntime=table.clone(runtime),table.clone(runtime)
+previousRuntime.recordingReservations={};nextRuntime.recordingReservations={}
+local beforeReload, afterReload=factory(previousRuntime),factory(nextRuntime)
+suspended=false
+onWrite=function(p,v)
+	if not suspended then suspended=true;coroutine.yield() end
+	files[p]=v
+end
+local earlierPath
+local oldWriter=coroutine.create(function()earlierPath=beforeReload.save("Reload overlap",{frame})end)
+assert(coroutine.resume(oldWriter))
+local newerPath=afterReload.save("Reload overlap",{frame})
+assert(coroutine.resume(oldWriter) and earlierPath~=newerPath,"Reload lost the outstanding root-level reservation")
+onWrite=nil
+
+-- Export verification leaves the source unchanged and handles missing folders.
 env.isfolder = function()
 	return false
 end
