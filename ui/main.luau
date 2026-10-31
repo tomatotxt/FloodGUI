@@ -2,8 +2,21 @@ return function(context)
 	local UI, State, Advanced = context.ui, context.state, context.advanced
 	local window = UI.window("main", "FloodGUI", "FE2 • live", Enum.KeyCode.J)
 	local controls, bindings, tabs = {}, {}, {}
+	local pages = {}
+	local groups = {
+		home={"TAS","Session"}, tas={"TAS","Recording and playback"},
+		maps={"TAS","Map selection"}, files={"TAS","Recording files"},
+		farm={"Auto Farm","Automation"}, movement={"Local Player","Movement"},
+		advanced={"Blatant","Optional integrations"}, settings={"Other","Settings"}, about={"Credits","Credits and information"},
+	}
 	local function tab(id, name, icon, description)
-		local result = window:Tab({ Name = name, Icon = icon, Desc = description })
+		local group=groups[id] or {name,name}
+		local result=pages[group[1]]
+		if not result then
+			result=window:Tab({Name=group[1],Icon=icon,Desc=description})
+			pages[group[1]]=result
+		end
+		result:Section(group[2])
 		tabs[id] = result
 		return result
 	end
@@ -261,7 +274,7 @@ return function(context)
 	)
 	tas:Paragraph({
 		Name = "Creator controls",
-		Content = "The creator has its own Airflow tabs for recording, visualization, files, and shortcuts, plus buttons for holding rewind and frame advance.",
+		Content = "The creator has its own Kavo window for recording, visualization, files, and shortcuts, plus buttons for holding rewind and frame advance.",
 	})
 	local files = tab("files", "Recordings", "folder-open", "Local and bundled recording library")
 	context.runtime.run("ui/recordings.luau")(
@@ -399,7 +412,7 @@ return function(context)
 
 	local settings = tab("settings", "Settings", "settings", "Interface, shortcuts, and session tools")
 	bind(settings, "Toggle", "AlertsEnabled", "Game alerts", "Show messages in the game's alert feed.")
-	bind(settings, "Toggle", "Notifications", "Airflow notifications", "Show FloodGUI notification cards.")
+	bind(settings, "Toggle", "Notifications", "UI notifications", "Show FloodGUI notification cards.")
 	bind(
 		settings,
 		"Slider",
@@ -505,10 +518,10 @@ return function(context)
 			)
 		end
 	)
-	local about = tab("about", "About", "info", "FloodGUI • tomato red and black")
+	local about = tab("about", "About", "info", "FloodGUI • Kavo fork")
 	about:Paragraph({
 		Name = "Credits",
-		Content = "TAS system: Tomato; original foundation: Voiz#5668.\nGUI and integration: Tomato.\nInterface: Airflow with Lucide icons and ValleySans font fallback.",
+		Content = "TAS system: Tomato; original foundation: Voiz#5668.\nGUI and integration: Tomato.\nInterface: xHeptc Kavo, using tomatotxt's fork and the original Flood-GUI theme.",
 	})
 	button(about, "Support", "Copy support invite", nil, "message-circle", context.copyInvite)
 	about:Paragraph({

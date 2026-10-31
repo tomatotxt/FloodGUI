@@ -10,7 +10,7 @@ getgenv().FloodGUIRecordings = Recordings
 -- Credits:
 --      TAS System: Tomato (Base by Voiz#5668)
 --      Reverse Engineering/Base GUI: Tomato
---      UI Library: Airflow
+--      UI Library: xHeptc Kavo, tomatotxt fork
 -- ==============================================================================
 
 -- ==============================================================================
@@ -74,7 +74,7 @@ local AddedWaiting = RemoteFolder:WaitForChild("AddedWaiting")
 local AlertRemote = RemoteFolder:WaitForChild("Alert")
 
 local CONFIG = {
-    UI_LIBRARY_PATH = "vendor/airflow.luau",
+    UI_LIBRARY_PATH = "vendor/kavo.luau",
     TAS_CREATOR_PATH = "TAS/CREATOR/creator.luau",
     TAS_PLAYER_PATH = "TAS/PLAYER/newtasplayer.luau",
     DISCORD_INVITE = "https://discord.gg/8N2M9fHJqa"

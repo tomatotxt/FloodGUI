@@ -316,6 +316,11 @@ return function(sources)
 	for _, id in ipairs({ "home", "farm", "maps", "tas", "files", "movement", "advanced", "settings", "about" }) do
 		assert(main.tabs[id], "Missing main tab: " .. id)
 	end
+	assert(#main.tabs.home.Window.Tabs == 6, "Main menu must retain the six original Kavo tabs")
+	for index, name in ipairs({"TAS", "Auto Farm", "Local Player", "Blatant", "Other", "Credits"}) do
+		assert(main.tabs.home.Window.Tabs[index].Name == name, "Incorrect original Kavo tab order")
+	end
+	assert(main.tabs.files == main.tabs.tas and main.tabs.maps == main.tabs.tas, "TAS tools must share the TAS tab")
 	for _, key in ipairs({
 		"AutoPlay",
 		"FallbackToFarm",
@@ -507,6 +512,6 @@ return function(sources)
 	creator.Destroy()
 	assert(creator.Window._destroyed)
 	print(
-		"PASS: Airflow main/creator/player wiring, feature parity, synchronized toggles, spending confirmation, file actions and cleanup"
+		"PASS: main/creator/player wiring, original six Kavo tabs, feature parity, synchronized toggles, spending confirmation, file actions and cleanup"
 	)
 end

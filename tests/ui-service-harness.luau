@@ -1,4 +1,4 @@
--- Run the shared service with actual touch binding; mock only Roblox/Airflow.
+-- Run the shared service with actual touch binding; mock only Roblox/renderer.
 return function(serviceSource, touchSource)
 	local function signal()
 		local listeners = {}
@@ -100,7 +100,7 @@ return function(serviceSource, touchSource)
 	end
 	local touch = load(touchSource)
 	function runtime.run(path)
-		if path == "vendor/airflow.luau" then
+		if path == "ui/kavo.luau" then
 			return library
 		end
 		assert(path == "TAS/CREATOR/touch-controls.luau")

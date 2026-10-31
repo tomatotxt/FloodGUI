@@ -22,8 +22,8 @@ These scripts require Roblox and executor APIs including local file access and l
 
 ## Features
 
-- Airflow menus throughout, with a tomato-red and black theme, Lucide icons, and ValleySans with a BuilderSans fallback.
-- Organized Overview, Farming, Maps, TAS, Recordings, Movement, Advanced, Settings, and About tabs.
+- The original Flood-GUI Kavo fork throughout, with its blue-and-gray theme, Gotham text, compact controls and floating reopen buttons.
+- The original six tabs: TAS, Auto Farm, Local Player, Blatant, Other and Credits. TAS includes the map selector and recording browser.
 - Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.
 - Automatic playback of the 177 bundled legacy JSON recordings and new binary recordings.
@@ -47,11 +47,11 @@ The prepared local repository uses branch `live` with `origin` configured. After
 
 `FloodGUI.luau` is the main app. `TAS/CREATOR/` and `TAS/PLAYER/` contain the integrated engines. `TAS/codec.luau` and `TAS/recordings.luau` define the translation and file APIs.
 
-`ui/` contains FloodGUI's Airflow interfaces: `main.luau`, `creator.luau`, `player.luau`, and the integrated `recordings.luau` browser. `service.luau` shares the theme, font loading, and window lifecycle. `vendor/airflow.luau` is the UI dependency used by all of them. Main menu: J; creator: F6; creator hold controls: F7; player: F5. Floating buttons reopen hidden windows on touch devices too.
+`ui/` contains the main, creator, player and recording-browser controllers. `service.luau` shares the theme and window lifecycle; `kavo.luau` adapts their controls to `vendor/kavo.luau`. Main menu: J; creator: F6; creator hold controls: F7; player: F5. Floating buttons reopen hidden windows on touch devices too. See [Kavo integration](docs/KAVO-UI.md).
 
 `preferences.luau` manages device-local `preferences.json` (excluded from Git); `overrides.luau` tracks reversible character properties. Settings → Unload FloodGUI stops the session and removes its windows. Save any active creator recording before unloading.
 
-All FloodGUI windows use `PlayerGui` to avoid protected-container permission failures in game/input callbacks. `compat.luau` isolates game-alert calls on worker threads and optionally restores the worker's previous identity through available UNC/sUNC functions. These identity APIs are not required for the UI. If a notification cannot render, the error is logged without stopping FloodGUI. Lucide icons, custom-font loading, and the theme are unchanged.
+All FloodGUI windows use `PlayerGui` to avoid protected-container permission failures in game/input callbacks. `compat.luau` isolates game-alert calls on worker threads and optionally restores the worker's previous identity through available UNC/sUNC functions. These identity APIs are not required for the UI. If a notification cannot render, the error is logged without stopping FloodGUI. The Kavo interface uses Roblox's built-in Gotham font.
 
 With Node.js and the official Luau CLI installed:
 

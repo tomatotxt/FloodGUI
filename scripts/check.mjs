@@ -42,10 +42,8 @@ for(const file of scripts.filter(file=>!file.includes(`${path.sep}tests${path.se
     assert(fs.existsSync(path.join(root,match[1])),`Missing dependency: ${match[1]}`);
   }
 }
-for (const file of scripts.filter(file=>!file.includes(`${path.sep}vendor${path.sep}`))) {
-  const source=fs.readFileSync(file,'utf8');
-  assert(!/vendor\/kavo\.luau|:NewTab\(|:NewToggle\(/.test(source),`Unconverted UI: ${file}`);
-}
+const service=fs.readFileSync(path.join(root,'ui/service.luau'),'utf8');
+assert(service.includes('Runtime.run("ui/kavo.luau")')&&!service.includes('vendor/airflow.luau'),'Active UI must use the Kavo renderer');
 const loader=fs.readFileSync(path.join(root,'loader.lua'),'utf8');
 assert(loader.includes('https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/'));
 assert(loader.includes('runtime.run("FloodGUI.luau")'));
@@ -92,6 +90,10 @@ try{
   const airflowFile=path.join(temp,'airflow.spec.luau');
   fs.writeFileSync(airflowFile,`local test=assert(loadstring(${literal(airflowTest)}))()\ntest(${literal(airflowSource)}, {${iconNames.map(JSON.stringify).join(',')}})`);
   execFileSync(tool('luau'),[airflowFile],{stdio:'inherit'});
+  const kavoTest=fs.readFileSync(path.join(root,'tests/kavo-harness.luau'),'utf8');
+  const kavoFile=path.join(temp,'kavo.spec.luau');
+  fs.writeFileSync(kavoFile,`local test=assert(loadstring(${literal(kavoTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'vendor/kavo.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'ui/kavo.luau'),'utf8'))})`);
+  execFileSync(tool('luau'),[kavoFile],{stdio:'inherit'});
   const enginesTest=fs.readFileSync(path.join(root,'tests/tas-engines-harness.luau'),'utf8');
   const enginesFile=path.join(temp,'tas-engines.spec.luau');
   fs.writeFileSync(enginesFile,`local test=assert(loadstring(${literal(enginesTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'TAS/CREATOR/creator.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'TAS/PLAYER/newtasplayer.luau'),'utf8'))})`);
