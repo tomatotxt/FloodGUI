@@ -171,7 +171,10 @@ function Library:Window(options)
         page._button.LayoutOrder=spec.Order or #self._tabs+1
         local tab={Window=self,_page=page._page,_native=page,Mode=spec.Mode}
         local section
-        function tab:Section(name,collapsed)section=page:NewSection(name,false,collapsed);return section end
+        function tab:Section(name,collapsed)
+            section=page:NewSection(name,not collapsed,collapsed)
+            return section
+        end
         local function group()
             if not section then section=page:NewSection(spec.Name,true)end
             return section
