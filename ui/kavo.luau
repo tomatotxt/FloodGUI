@@ -211,6 +211,16 @@ function Library:Window(options)
             else handle=g:NewLabel(opts.Text or c._name)end
             c._frame=handle.Frame
             c._native=handle
+            local symbols={clapperboard="●",video="●",play="▶",square="■"}
+            if kind=="Button" and symbols[opts.Icon]then
+                local old=c._frame:FindFirstChildWhichIsA("ImageLabel")
+                if old then
+                    old.Visible=false
+                    local icon=create("TextLabel",c._frame,{Name="ActionSymbol",Position=old.Position,Size=old.Size,
+                        BackgroundTransparency=1,Font=Enum.Font.Gotham,TextSize=18,Text=symbols[opts.Icon]})
+                    native:RegisterAccent(icon,"TextColor3")
+                end
+            end
             if kind=="Button" and opts.Style=="Primary"then
                 local outline=create("UIStroke",c._frame,{Thickness=1.5,Transparency=0.2,ApplyStrokeMode=Enum.ApplyStrokeMode.Border})
                 native:RegisterAccent(outline,"Color")
@@ -223,7 +233,7 @@ function Library:Window(options)
                 elseif kind=="Dropdown"then handle:Set(value)
                 elseif kind=="Keybind"then if value then handle:Set(value)end
                 elseif kind=="Label"then handle:UpdateLabel(tostring(value or ""))
-                elseif kind=="Paragraph"then handle:UpdateLabel(c._name.."\n"..tostring(value or ""))
+                elseif kind=="Paragraph"then handle:UpdateLabel((c._name~="" and c._name.."\n" or "")..tostring(value or ""))
                 elseif kind=="Progress"then handle:UpdateLabel(c._name.."  "..math.floor((value or 0)*100).."%")end
                 suppressed=false
             end
@@ -268,7 +278,10 @@ function Library:Window(options)
             end
             if kind=="Paragraph"then
                 c._frame.TextWrapped=true
-                c._frame.TextYAlignment=Enum.TextYAlignment.Center
+                c._frame.TextYAlignment=Enum.TextYAlignment.Top
+                local padding=c._frame:FindFirstChildWhichIsA("UIPadding")
+                padding.PaddingTop=UDim.new(0,8)
+                padding.PaddingBottom=UDim.new(0,8)
                 c._frame.BackgroundColor3=theme.ElementColor
                 local function resize()
                     c._frame.Size=UDim2.fromOffset(352,math.max(44,c._frame.TextBounds.Y+16))

@@ -1193,10 +1193,13 @@ function Kavo.CreateLib(kavName, themeList, options)
                 label.ClipsDescendants = true
                 label.Size = UDim2.new(0, 352, 0, 33)
                 label.Font = Enum.Font.Gotham
-                label.Text = "  " .. title
+                label.Text = title
                 label.RichText = true
                 label.TextSize = 14.000
                 label.TextXAlignment = Enum.TextXAlignment.Left
+                local padding=Instance.new("UIPadding",label)
+                padding.PaddingLeft=UDim.new(0,10)
+                padding.PaddingRight=UDim.new(0,10)
                 Instance.new("UICorner", label).CornerRadius = UDim.new(0, 4)
                 
                 RegisterTheme(label, "BackgroundColor3", "ElementColor")
@@ -1205,7 +1208,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 end)
 
                 function labelFunctions:UpdateLabel(newText)
-                    label.Text = "  " .. newText
+                    label.Text = newText
                 end 
                 labelFunctions.Frame=label
                 return labelFunctions

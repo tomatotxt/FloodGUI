@@ -16,7 +16,7 @@ return function(context)
 			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		result:Section(group[2], id=="about")
+		if id~="home" then result:Section(group[2], id=="about")end
 		tabs[id] = result
 		return result
 	end
@@ -102,24 +102,10 @@ return function(context)
 		sync()
 	end
 	local home = tab("home", "Overview", "layout-dashboard", "Session status and quick actions")
-	home:Paragraph({
-		Name = "FloodGUI",
-		Content = "Create a run, browse Recordings, or play the current map. Use the title-bar switch for farming and movement tools.",
-	})
-	local status = home:Paragraph({ Name = "Session", Content = "Ready" })
-	button(
-		home,
-		"Stop",
-		"Stop automation",
-		"Stops farm, playback, map selection, collection, rebirth, and advanced actions.",
-		"square",
-		stop,
-		false
-	)
 	button(
 		home,
 		"Creator",
-		"Open TAS creator",
+		"Create recording",
 		"Pauses automation and switches into recording mode.",
 		"clapperboard",
 		function()
@@ -128,9 +114,10 @@ return function(context)
 		end,
 		true
 	)
-	button(home, "Player", "Start TAS player", "Loads the recording for the current map.", "play", function()
+	button(home, "Player", "Play current map", "Loads the recording for the current map.", "play", function()
 		context.execute("Play")
 	end)
+	button(home,"Stop","Stop automation","Stops farming, playback and other automation.","square",stop)
 
 	local farm = tab("farm", "Farming", "sprout", "Automation and round timing")
 	button(farm,"StopTools","Stop automation","Stops active automation across both modes.","square",stop)
@@ -274,10 +261,6 @@ return function(context)
 		"Higher values respond faster.",
 		{ Min = 0.01, Max = 0.1, Step = 0.01 }
 	)
-	tas:Paragraph({
-		Name = "Creator controls",
-		Content = "The creator has its own Kavo window for recording, visualization, files, and shortcuts, plus buttons for holding rewind and frame advance.",
-	})
 	local files = tab("files", "Recordings", "folder-open", "Local and bundled recording library")
 	context.runtime.run("ui/recordings.luau")(
 		files,
@@ -314,10 +297,6 @@ return function(context)
 	end
 
 	local advanced = tab("advanced", "Advanced", "flask-conical", "Capability checks and optional quickfarm features")
-	advanced:Paragraph({
-		Name = "Feature availability",
-		Content = "Each integration is checked independently. Unavailable features explain why; a runtime failure switches off only the affected feature.",
-	})
 	local descriptions = {
 		["Fast load"] = "Shorten supported loading transitions.",
 		["Forced win"] = "Requires an identifiable escape lock in the game's internals.",
@@ -542,16 +521,6 @@ return function(context)
 		while not context.session.Cancelled and not window._destroyed do
 			sync()
 			window:SetStatus((getgenv().TAS_Active and "Creator open" or getgenv().IsTASPlaying and "Playing" or State.AutoPlay and "TAS waiting" or "Idle")..(State.AutoFarm and " • Farm on" or ""))
-			status:Set(
-				string.format(
-					"Farm: %s • TAS: %s • Creator: %s\nTarget: %s • Limit: %s",
-					State.AutoFarm and "on" or "off",
-					getgenv().IsTASPlaying and "playing" or State.AutoPlay and "waiting" or "off",
-					getgenv().TAS_Active and "active" or "idle",
-					State.TargetMapName ~= "" and State.TargetMapName or "Any eligible map",
-					State.EnforceDifficulty and State.TargetDifficulty or "None"
-				)
-			)
 			task.wait(0.3)
 		end
 	end)
