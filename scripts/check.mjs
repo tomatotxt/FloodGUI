@@ -61,7 +61,7 @@ environment.game={HttpGet=function(_,url)table.insert(fetched,url);return runtim
 environment.getfenv=function()return environment end
 environment.loadstring=function(text,name)local fn,err=loadstring(text,name);if fn then setfenv(fn,environment)end;return fn,err end
 local online=assert(environment.loadstring(source));assert(online()=='started')
-assert(fetched[1]=='https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/runtime.luau')
+assert(fetched[1]:match('^https://raw%.githubusercontent%.com/tomatotxt/FloodGUI/live/runtime%.luau%?v=.+$'))
 local offline=assert(environment.loadstring(source));assert(offline({localOnly=true})=='started' and #fetched==1)
 assert(not pcall(offline,{root='../outside'}))
 for _,invalid in ipairs({'partial/../outside','partial/CON','a//b','a./b'}) do

@@ -186,7 +186,7 @@ return function(vendorSource,adapterSource)
     w:SetMode("TAS")
     assert(secondPage._native._button.BackgroundColor3==secondAccent and second.Root.BackgroundColor3==oldColor,"Mode theme leaked to another window")
     second:Destroy()
-    w:SetStatus("Recording");assert(w._native.Title.Text=="FloodGUI • Recording")
+    w:SetStatus("Recording");assert(w._native.Title.Text=="FloodGUI | Recording")
     local confirmed=0
     w:Confirm({Title="Confirm",Content="Continue?",Callback=function()confirmed+=1 end})
     local confirmButton

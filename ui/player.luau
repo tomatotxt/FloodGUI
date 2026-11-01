@@ -1,7 +1,7 @@
 local Runtime = assert(getgenv().FloodGUIRuntime, "Start FloodGUI through loader.lua")
 local UI = Runtime.run("ui/service.luau")
 return function(context)
-	local window = UI.window("player", "TAS Player", "FloodGUI • playback", Enum.KeyCode.F5)
+	local window = UI.window("player", "TAS Player", "FloodGUI | playback", Enum.KeyCode.F5)
 	local playback = window:Tab({ Name = "Playback", Icon = "play", Desc = context.mapName })
 	local options = window:Tab({ Name = "Options", Icon = "sliders-horizontal", Desc = "Live playback settings" })
 	local manual = window:Tab({ Name = "Manual", Icon = "hand", Desc = "Hold controls and keyboard guide" })
@@ -27,12 +27,12 @@ return function(context)
 		Min = 0.1,
 		Max = 20,
 		Step = 0.05,
-		Suffix = "×",
+		Suffix = "x",
 		Default = context.status().speed,
 		Callback = context.setSpeed,
 	})
 	options:Button({
-		Name = "Reset speed to 1×",
+		Name = "Reset speed to 1x",
 		Icon = "rotate-ccw",
 		Callback = function()
 			context.setSpeed(1)
@@ -102,12 +102,12 @@ return function(context)
 			speed:Set(state.speed, true)
 			status:Set(
 				string.format(
-					"%s\n%.2f / %.2f s • %.2f× effective speed\n%s",
+					"%s\n%.2f / %.2f s | %.2fx effective speed\n%s",
 					context.mapName,
 					state.elapsed,
 					state.duration,
 					state.effectiveSpeed,
-					state.pausePending and "Waiting to land…" or state.paused and "Paused" or "Playing"
+					state.pausePending and "Waiting to land..." or state.paused and "Paused" or "Playing"
 				)
 			)
 			task.wait(0.2)

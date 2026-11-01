@@ -39,14 +39,15 @@ if not isfolder(root .. "/TAS FILES") then
 	makefolder(root .. "/TAS FILES")
 end
 local base = "https://raw.githubusercontent.com/tomatotxt/FloodGUI/live/"
+local cacheToken = tostring(os.time()) .. "-" .. tostring(os.clock())
 local source
 if options.localOnly then
 	source = readfile(root .. "/runtime.luau")
 else
-	source = game:HttpGet(base .. "runtime.luau")
+	source = game:HttpGet(base .. "runtime.luau?v=" .. cacheToken)
 end
 local initialize, err = loadstring(source, "@FloodGUI/runtime.luau")
 assert(initialize, "FloodGUI runtime failed to compile: " .. tostring(err))
-local runtime = initialize()(root, { localOnly = options.localOnly == true, baseURL = base })
+local runtime = initialize()(root, { localOnly = options.localOnly == true, baseURL = base, cacheToken = cacheToken })
 getgenv().FloodGUIRuntime = runtime
 return runtime.run("FloodGUI.luau")

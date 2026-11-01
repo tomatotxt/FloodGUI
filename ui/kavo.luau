@@ -42,7 +42,7 @@ function Library:Window(options)
     function window:SetKeybind(key)self._key=key end
     function window:SetStatus(text)
         if not self._destroyed then
-            native.Title.Text="FloodGUI • "..text
+            native.Title.Text="FloodGUI | "..text
             native.Title.TextSize=13
             native.Title.Size=UDim2.fromOffset(260,20)
             native.Title.Position=UDim2.new(0.017,0,0,4)
@@ -75,7 +75,7 @@ function Library:Window(options)
             theme[key]=value
             native:ChangeColor(key,value)
         end
-        self.ModeSwitch.Text=mode=="TAS" and "TAS • Switch to Tools >" or "Tools • Switch to TAS >"
+        self.ModeSwitch.Text=mode=="TAS" and "TAS | Switch to Tools >" or "Tools | Switch to TAS >"
         self.ModeSwitch.TextColor3=config.Accent
         self.ModeSwitch.BackgroundColor3=theme.Header
         self.ModeSwitch:SetAttribute("CurrentMode",mode)

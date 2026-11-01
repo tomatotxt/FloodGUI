@@ -3,6 +3,7 @@ return function(root, options)
 	assert(type(options) == "table", "Runtime options must be a table")
 	assert(options.localOnly == nil or type(options.localOnly) == "boolean", "localOnly must be true or false")
 	local cache = {}
+	local cacheToken = options.cacheToken or (tostring(os.time()) .. "-" .. tostring(os.clock()))
 	local function validate(relative)
 		assert(type(relative) == "string" and relative ~= "", "Expected a relative project path")
 		assert(
@@ -46,7 +47,7 @@ return function(root, options)
 		if cache[relative] ~= nil then
 			return cache[relative]
 		end
-		local data = game:HttpGet(Runtime.url(relative))
+		local data = game:HttpGet(Runtime.url(relative) .. "?v=" .. cacheToken)
 		assert(
 			type(data) == "string" and data ~= "" and data ~= "404: Not Found",
 			"Unavailable FloodGUI file: " .. relative

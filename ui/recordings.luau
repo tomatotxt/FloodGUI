@@ -3,7 +3,7 @@ return function(tab, context)
 	local Runtime, Recordings, alert = context.runtime, context.recordings, context.alert
 	local selected, bundled, localFiles = nil, {}, {}
 	local selectedSource
-	local inventory = tab:Label({ Text = "Reading recordings…" })
+	local inventory = tab:Label({ Text = "Reading recordings..." })
 	local info = tab:Paragraph({ Name = "Selected recording", Content = "Select a file to inspect or convert." })
 	local localChoice, bundledChoice
 	local function select(name, source)
@@ -96,10 +96,10 @@ return function(tab, context)
 		end
 		inventory:Set(
 			string.format(
-				"%d local • %d available to download%s",
+				"%d local | %d available to download%s",
 				#localFiles,
 				#bundled,
-				ok and "" or " • Local listing unavailable"
+				ok and "" or " | Local listing unavailable"
 			)
 		)
 		if not catalogOK then
@@ -140,7 +140,7 @@ return function(tab, context)
 				end
 				info:Set(
 					string.format(
-						"%s\n%d frames • %.2f seconds\nMap: %s • Author: %s",
+						"%s\n%d frames | %.2f seconds\nMap: %s | Author: %s",
 						name,
 						#frames,
 						frames[#frames].time,
@@ -178,7 +178,7 @@ return function(tab, context)
 		end,
 	})
 	tab:Section("Import a recording")
-	local url = tab:Input({ Name = "Recording URL", Placeholder = "https://…", Default = "" })
+	local url = tab:Input({ Name = "Recording URL", Placeholder = "https://...", Default = "" })
 	local map = tab:Input({ Name = "Map name", Placeholder = "Exact map name", Default = "" })
 	local importing = false
 	tab:Button({

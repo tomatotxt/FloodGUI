@@ -1,10 +1,10 @@
 return function(context)
 	local UI, State, Advanced = context.ui, context.state, context.advanced
-	local window = UI.window("main", "FloodGUI", "FE2 • live", Enum.KeyCode.J)
+	local window = UI.window("main", "FloodGUI", "FE2 | live", Enum.KeyCode.J)
 	local controls, bindings, tabs = {}, {}, {}
 	local pages = {}
 	local groups = {
-		home={"Create & Play","Start here","TAS",1}, tas={"Playback","Playback controls","TAS",2},
+		home={"Create & Play","Recording and playback","TAS",1}, tas={"Playback","Playback controls","TAS",2},
 		maps={"Maps","Choose a map",nil,4}, files={"Recordings","Your recording library","TAS",3},
 		farm={"Farming","Auto farm","Tools",1}, movement={"Movement","Speed and jumping","Tools",2},
 		advanced={"Advanced","Optional tools","Tools",3}, settings={"Settings","Appearance",nil,5}, about={"Settings","Credits and help",nil,5},
@@ -16,7 +16,7 @@ return function(context)
 			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		if id~="home" and id~="advanced" then result:Section(group[2], id=="about")end
+		if id~="advanced" then result:Section(group[2], id=="about")end
 		tabs[id] = result
 		return result
 	end
@@ -235,7 +235,7 @@ return function(context)
 		"PlaybackSpeed",
 		"Playback speed",
 		"Initial speed for the next run; live controls appear in the player.",
-		{ Min = 0.25, Max = 3, Step = 0.05, Suffix = "×" }
+		{ Min = 0.25, Max = 3, Step = 0.05, Suffix = "x" }
 	)
 	bind(
 		tas,
@@ -326,12 +326,12 @@ return function(context)
 		local feature = Advanced.guard.features[name]
 		if not feature then
 			advanced:Paragraph({
-				Name = name .. " • unavailable",
+				Name = name .. " | unavailable",
 				Content = "The advanced module could not initialize.",
 			})
 		else
 			local control
-			local note = advanced:Paragraph({ Name = name, Content = "Checking…" })
+			local note = advanced:Paragraph({ Name = name, Content = "Checking..." })
 			if name == "Manual boost" then
 				control = button(
 					advanced,
@@ -377,7 +377,7 @@ return function(context)
 			local function changed(f)
 				note:Set(
 					f.available
-							and (name == "Manual boost" and "Available • ready" or f.enabled and "Enabled" or "Available • off")
+							and (name == "Manual boost" and "Available | ready" or f.enabled and "Enabled" or "Available | off")
 						or ("Disabled: " .. tostring(f.reason))
 				)
 				if control.Set and name ~= "Manual boost" then
@@ -409,7 +409,7 @@ return function(context)
 		"InterfaceScale",
 		"Interface scale",
 		"Scale the main, creator, and player windows.",
-		{ Min = 0.8, Max = 1.25, Step = 0.05, Suffix = "×" }
+		{ Min = 0.8, Max = 1.25, Step = 0.05, Suffix = "x" }
 	)
 	settings:Section("Connection",true)
 	bind(settings, "Toggle", "AntiAFK", "Prevent idle disconnect", "Keep the session active while idle.")
@@ -446,7 +446,7 @@ return function(context)
 			window:SetKeybind(key)
 		end,
 	})
-	local about = tab("about", "About", "info", "FloodGUI • Kavo fork")
+	local about = tab("about", "About", "info", "FloodGUI | Kavo fork")
 	about:Paragraph({
 		Name = "Credits",
 		Content = "TAS system: Tomato; original foundation: Voiz#5668.\nGUI and integration: Tomato.\nInterface: xHeptc Kavo, using tomatotxt's fork and the original Flood-GUI theme.",
@@ -527,7 +527,7 @@ return function(context)
 	task.spawn(function()
 		while not context.session.Cancelled and not window._destroyed do
 			sync()
-			window:SetStatus((getgenv().TAS_Active and "Creator open" or getgenv().IsTASPlaying and "Playing" or State.AutoPlay and "TAS waiting" or "Idle")..(State.AutoFarm and " • Farm on" or ""))
+			window:SetStatus((getgenv().TAS_Active and "Creator open" or getgenv().IsTASPlaying and "Playing" or State.AutoPlay and "TAS waiting" or "Idle")..(State.AutoFarm and " | Farm on" or ""))
 			task.wait(0.3)
 		end
 	end)

@@ -3,7 +3,7 @@ local UI = Runtime.run("ui/service.luau")
 local TAS_UI = {}
 
 function TAS_UI.Create()
-	local window = UI.window("creator", "TAS Creator", "FloodGUI • binary", Enum.KeyCode.F6)
+	local window = UI.window("creator", "TAS Creator", "FloodGUI | binary", Enum.KeyCode.F6)
 	local actions, toggles = {}, {}
 	local result = { ScreenGui = window.Gui, Window = window, Buttons = {} }
 	local controls =
@@ -44,7 +44,7 @@ function TAS_UI.Create()
 	controls:Section("Live status",true)
 	result.TimeText = UI.label(controls, "0:00.000")
 	result.StatusText = UI.label(controls, "PAUSED")
-	result.MapEventInfo = UI.label(controls, "Waiting for map…")
+	result.MapEventInfo = UI.label(controls, "Waiting for map...")
 	result.SavestatesCount = UI.label(controls, "States: 0")
 	result.FrameCount = UI.label(controls, "Frames: 0")
 	controls:Section("Savestates")
