@@ -5,6 +5,7 @@ return function(context)
 	local playback = window:Tab({ Name = "Playback", Icon = "play", Desc = context.mapName })
 	local options = window:Tab({ Name = "Options", Icon = "sliders-horizontal", Desc = "Live playback settings" })
 	local manual = window:Tab({ Name = "Manual", Icon = "hand", Desc = "Hold controls and keyboard guide" })
+	playback:Section("Playback",false)
 	local status = playback:Paragraph({ Name = "Now playing", Content = context.mapName })
 	local progress = playback:Progress({ Name = "Recording progress", Default = 0 })
 	local pause = playback:Toggle({
@@ -13,13 +14,14 @@ return function(context)
 		Default = false,
 		Callback = context.pause,
 	})
+	playback:Section("Session",true)
 	playback:Button({
 		Name = "Stop playback",
 		Desc = "Switches off auto-play too.",
-		Style = "Primary",
 		Icon = "square",
 		Callback = context.stop,
 	})
+	options:Section("Speed",false)
 	local speed = options:Slider({
 		Name = "Playback speed",
 		Min = 0.1,
@@ -36,6 +38,7 @@ return function(context)
 			context.setSpeed(1)
 		end,
 	})
+	options:Section("Swim orientation",true)
 	options:Slider({
 		Name = "Swim rotation response",
 		Min = 0.01,
@@ -50,10 +53,12 @@ return function(context)
 		Default = false,
 		Callback = context.setSwimSmoothing or function() end,
 	})
+	options:Section("Playback details",true)
 	options:Paragraph({
 		Name = "Map events",
 		Content = "Playback follows the game's numeric speed when available. Live map and server state are not rewound; use a recording made for the same layout.",
 	})
+	manual:Section("Hold controls",false)
 	local _, releaseZipline = UI.hold(
 		manual,
 		"Hold zipline / swing",
@@ -71,6 +76,7 @@ return function(context)
 	end, function()
 		context.slide(false)
 	end, context.track)
+	manual:Section("Keyboard guide",true)
 	manual:Paragraph({
 		Name = "Keyboard controls",
 		Content = "P: pause / resume\nUp / Down: adjust speed\nHold Z: zipline / swing\nHold S: slide\nF5: show / hide player",

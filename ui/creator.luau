@@ -13,15 +13,7 @@ function TAS_UI.Create()
 	local files = window:Tab({ Name = "Files", Icon = "folder-open", Desc = "Save, preview, and convert recordings" })
 	local shortcuts =
 		window:Tab({ Name = "Shortcuts", Icon = "keyboard", Desc = "Rebind the creator's keyboard controls" })
-	result.TimeText = UI.label(controls, "0:00.000")
-	result.StatusText = UI.label(controls, "PAUSED")
-	result.MapEventInfo = UI.label(controls, "Waiting for map…")
-	result.SavestatesCount = UI.label(controls, "States: 0")
-	result.FrameCount = UI.label(controls, "Frames: 0")
-	controls:Paragraph({
-		Name = "Checkpoint scope",
-		Content = "Rewind restores recorded poses and captured map/lighting effects. Files store trajectories, not a complete game simulation; native player-action timelines are not dispatched.",
-	})
+	controls:Section("Recording",false)
 	local function action(page, id, name, description, icon, primary)
 		result.Buttons[id] = page:Button({
 			Name = name,
@@ -49,6 +41,12 @@ function TAS_UI.Create()
 		result.Buttons[id] = toggles[id]
 	end
 	action(controls, "Pause", "Play / pause", "Pause or resume recording.", "pause", true)
+	controls:Section("Live status",true)
+	result.TimeText = UI.label(controls, "0:00.000")
+	result.StatusText = UI.label(controls, "PAUSED")
+	result.MapEventInfo = UI.label(controls, "Waiting for map…")
+	result.SavestatesCount = UI.label(controls, "States: 0")
+	result.FrameCount = UI.label(controls, "Frames: 0")
 	controls:Section("Savestates")
 	action(controls, "AddState", "Add savestate", nil, "bookmark-plus")
 	action(controls, "LoadState", "Load last savestate", nil, "history")
@@ -72,6 +70,12 @@ function TAS_UI.Create()
 		"Rewind, advance, and preview with press-and-hold buttons.",
 		"hand"
 	)
+	controls:Section("Recording details",true)
+	controls:Paragraph({
+		Name = "Checkpoint scope",
+		Content = "Rewind restores recorded poses and captured map/lighting effects. Files store trajectories, not a complete game simulation; native player-action timelines are not dispatched.",
+	})
+	controls:Section("Session",true)
 	action(controls, "Stop", "Stop creator", "Finish recording mode and reset the character.", "square")
 	visuals:Section("Movement and environment")
 	toggle("AutoSwim", "Auto swim", "Automatically switch swimming state in water.", true)
@@ -96,6 +100,7 @@ function TAS_UI.Create()
 	toggle("PathTracing", "Show TAS path", "Draw the recorded path during previews.")
 	toggle("Trajectory", "Velocity predictor", "Show projected motion.")
 	toggle("CamMode", "Recorded camera", "Follow recorded camera movement during previews.")
+	files:Section("Save file",false)
 	local name = files:Input({ Name = "Save name", Placeholder = "Default: current map", Default = "" })
 	result.SaveBox = name._frame:FindFirstChildWhichIsA("TextBox", true)
 	action(
@@ -106,6 +111,7 @@ function TAS_UI.Create()
 		"save",
 		true
 	)
+	files:Section("Browse and preview",true)
 	local choice = files:Dropdown({
 		Name = "Local recording",
 		Options = {},
@@ -119,6 +125,7 @@ function TAS_UI.Create()
 	result.SelectedLabel = UI.label(files, "Selected: None")
 	action(files, "RefreshList", "Refresh local files", nil, "refresh-cw")
 	action(files, "LoadRun", "Preview selected recording", nil, "play")
+	files:Section("Convert and export",true)
 	action(files, "ConvertBinary", "Convert selected to binary", nil, "file-down")
 	action(files, "ExportJSON", "Export selected to JSON", "Existing JSON files will not be overwritten.", "file-json")
 	function result.BindAction(id, callback)
@@ -143,6 +150,7 @@ function TAS_UI.Create()
 		end
 	end
 	function result.SetKeybinds(keys)
+		shortcuts:Section("Recording shortcuts",false)
 		local names = {
 			AddSavestate = "Add savestate",
 			RemoveSavestate = "Remove savestate",

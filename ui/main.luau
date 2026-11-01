@@ -6,8 +6,8 @@ return function(context)
 	local groups = {
 		home={"Create & Play","Start here","TAS",1}, tas={"Playback","Playback controls","TAS",2},
 		maps={"Maps","Choose a map",nil,4}, files={"Recordings","Your recording library","TAS",3},
-		farm={"Farming","Automation","Tools",1}, movement={"Movement","Player movement","Tools",2},
-		advanced={"Advanced","Optional tools","Tools",3}, settings={"Settings","Interface and shortcuts",nil,5}, about={"Settings","Credits and help",nil,5},
+		farm={"Farming","Auto farm","Tools",1}, movement={"Movement","Speed and jumping","Tools",2},
+		advanced={"Advanced","Optional tools","Tools",3}, settings={"Settings","Appearance",nil,5}, about={"Settings","Credits and help",nil,5},
 	}
 	local function tab(id, name, icon, description)
 		local group=groups[id] or {name,name}
@@ -16,7 +16,7 @@ return function(context)
 			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		if id~="home" then result:Section(group[2], id=="about")end
+		if id~="home" and id~="advanced" then result:Section(group[2], id=="about")end
 		tabs[id] = result
 		return result
 	end
@@ -117,12 +117,23 @@ return function(context)
 	button(home, "Player", "Play current map", "Loads the recording for the current map.", "play", function()
 		context.execute("Play")
 	end)
+	home:Section("Session",true)
 	button(home,"Stop","Stop automation","Stops farming, playback and other automation.","square",stop)
 
 	local farm = tab("farm", "Farming", "sprout", "Automation and round timing")
-	button(farm,"StopTools","Stop automation","Stops active automation across both modes.","square",stop)
-	farm:Section("Run mode")
 	bind(farm, "Toggle", "AutoFarm", "Auto farm", "Navigate through map buttons and the exit.")
+	farm:Section("Collection and progression")
+	bind(farm, "Toggle", "AutoCollect", "Collect pages and escapees", "Runs independently of farm and TAS playback.")
+	bind(farm, "Toggle", "AutoRebirth", "Auto rebirth", "Periodically send a rebirth request when enabled.")
+	bind(
+		farm,
+		"Slider",
+		"RebirthInterval",
+		"Rebirth interval",
+		"Seconds between rebirth attempts.",
+		{ Min = 60, Max = 600, Step = 15, Suffix = " s" }
+	)
+
 	farm:Section("Round behavior", true)
 	bind(
 		farm,
@@ -161,17 +172,8 @@ return function(context)
 		"Automatically join lift",
 		"Queue again while farm, TAS, or map selection is enabled."
 	)
-	farm:Section("Collection and progression")
-	bind(farm, "Toggle", "AutoCollect", "Collect pages and escapees", "Runs independently of farm and TAS playback.")
-	bind(farm, "Toggle", "AutoRebirth", "Auto rebirth", "Periodically send a rebirth request when enabled.")
-	bind(
-		farm,
-		"Slider",
-		"RebirthInterval",
-		"Rebirth interval",
-		"Seconds between rebirth attempts.",
-		{ Min = 60, Max = 600, Step = 15, Suffix = " s" }
-	)
+	farm:Section("Session",true)
+	button(farm,"StopTools","Stop automation","Stops active automation across both modes.","square",stop)
 
 	local maps = tab("maps", "Maps", "map", "Voting, targets, and difficulty")
 	bind(maps, "Toggle", "SelectTASMaps", "Select target maps", "Vote using the mode and filters below.")
@@ -220,30 +222,12 @@ return function(context)
 	)
 
 	local tas = tab("tas", "TAS", "film", "Playback and creator preferences")
-	bind(tas, "Toggle", "AutoPlay", "Auto-play recordings", "Automatically replay a matching recording each round.")
-	bind(tas, "Toggle", "FallbackToFarm", "Farm when no recording exists", "Optional fallback to farming when no recording matches the map.")
-	button(
-		tas,
-		"LaunchCreator",
-		"Create a recording",
-		"New runs use binary format; legacy JSON files remain supported.",
-		"video",
-		function()
-			context.execute("Record")
-			sync()
-		end,
-		true
-	)
 	button(tas, "LaunchPlayer", "Play current map", nil, "play", function()
 		context.execute("Play")
 	end)
-	button(tas, "StopPlayer", "Stop TAS playback", "Also switches off automatic playback.", "square", function()
-		set("AutoPlay", false)
-		if getgenv().FloodGUIStopPlayer then
-			getgenv().FloodGUIStopPlayer(false)
-		end
-		sync()
-	end)
+	tas:Section("Automatic playback",true)
+	bind(tas, "Toggle", "AutoPlay", "Auto-play recordings", "Automatically replay a matching recording each round.")
+	bind(tas, "Toggle", "FallbackToFarm", "Farm when no recording exists", "Optional fallback to farming when no recording matches the map.")
 	tas:Section("Playback tuning", true)
 	bind(
 		tas,
@@ -261,6 +245,27 @@ return function(context)
 		"Higher values respond faster.",
 		{ Min = 0.01, Max = 0.1, Step = 0.01 }
 	)
+	tas:Section("Create a run",true)
+	button(
+		tas,
+		"LaunchCreator",
+		"Create a recording",
+		"New runs use binary format; legacy JSON files remain supported.",
+		"video",
+		function()
+			context.execute("Record")
+			sync()
+		end,
+		true
+	)
+	tas:Section("Session",true)
+	button(tas, "StopPlayer", "Stop TAS playback", "Also switches off automatic playback.", "square", function()
+		set("AutoPlay", false)
+		if getgenv().FloodGUIStopPlayer then
+			getgenv().FloodGUIStopPlayer(false)
+		end
+		sync()
+	end)
 	local files = tab("files", "Recordings", "folder-open", "Local and bundled recording library")
 	context.runtime.run("ui/recordings.luau")(
 		files,
@@ -282,6 +287,7 @@ return function(context)
 		set("JumpPower", 50)
 		sync()
 	end)
+	player:Section("Movement abilities",true)
 	bind(player, "Toggle", "GodMode", "Infinite air / health", "Keep the character's health topped up.")
 	bind(player, "Toggle", "Noclip", "Noclip", "Move through solid map geometry.")
 	bind(player, "Toggle", "AirJump", "Air jump", "Use the jump button while airborne.")
@@ -405,6 +411,7 @@ return function(context)
 		"Scale the main, creator, and player windows.",
 		{ Min = 0.8, Max = 1.25, Step = 0.05, Suffix = "×" }
 	)
+	settings:Section("Connection",true)
 	bind(settings, "Toggle", "AntiAFK", "Prevent idle disconnect", "Keep the session active while idle.")
 	bind(
 		settings,
@@ -438,6 +445,16 @@ return function(context)
 		OnChanged = function(key)
 			window:SetKeybind(key)
 		end,
+	})
+	local about = tab("about", "About", "info", "FloodGUI • Kavo fork")
+	about:Paragraph({
+		Name = "Credits",
+		Content = "TAS system: Tomato; original foundation: Voiz#5668.\nGUI and integration: Tomato.\nInterface: xHeptc Kavo, using tomatotxt's fork and the original Flood-GUI theme.",
+	})
+	button(about, "Support", "Copy support invite", nil, "message-circle", context.copyInvite)
+	about:Paragraph({
+		Name = "Recording formats",
+		Content = "New recordings: FE2T binary (.fe2tomatas).\nCompatible input: legacy JSON and experimental binary recordings.\nConversions are available in Recordings.",
 	})
 	settings:Section("Session tools")
 	settings:Paragraph({
@@ -503,16 +520,6 @@ return function(context)
 			)
 		end
 	)
-	local about = tab("about", "About", "info", "FloodGUI • Kavo fork")
-	about:Paragraph({
-		Name = "Credits",
-		Content = "TAS system: Tomato; original foundation: Voiz#5668.\nGUI and integration: Tomato.\nInterface: xHeptc Kavo, using tomatotxt's fork and the original Flood-GUI theme.",
-	})
-	button(about, "Support", "Copy support invite", nil, "message-circle", context.copyInvite)
-	about:Paragraph({
-		Name = "Recording formats",
-		Content = "New recordings: FE2T binary (.fe2tomatas).\nCompatible input: legacy JSON and experimental binary recordings.\nConversions are available in Recordings.",
-	})
 	window:ConfigureModes({Default="TAS",
 		TAS={Accent=Color3.fromRGB(70,150,255),Header=Color3.fromRGB(25,28,36)},
 		Tools={Accent=Color3.fromRGB(245,105,110),Header=Color3.fromRGB(36,25,29)},

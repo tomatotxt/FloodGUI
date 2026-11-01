@@ -172,7 +172,8 @@ function Library:Window(options)
         local tab={Window=self,_page=page._page,_native=page,Mode=spec.Mode}
         local section
         function tab:Section(name,collapsed)
-            section=page:NewSection(name,not collapsed,collapsed)
+            section=page:NewSection(name,false,true)
+            section:SetExpanded(collapsed==false)
             return section
         end
         local function group()

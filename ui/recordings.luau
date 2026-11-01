@@ -1,12 +1,8 @@
--- Recording library inside the Airflow window; local files retain priority.
+-- Recording library inside the Kavo window; local files retain priority.
 return function(tab, context)
 	local Runtime, Recordings, alert = context.runtime, context.recordings, context.alert
 	local selected, bundled, localFiles = nil, {}, {}
 	local selectedSource
-	tab:Paragraph({
-		Name = "Recording library",
-		Content = "Browse local runs or bundled maps. New imports and conversions are saved as binary revisions; existing recordings are preserved.",
-	})
 	local inventory = tab:Label({ Text = "Reading recordings…" })
 	local info = tab:Paragraph({ Name = "Selected recording", Content = "Select a file to inspect or convert." })
 	local localChoice, bundledChoice
@@ -132,6 +128,7 @@ return function(tab, context)
 		end
 		alert(ok and tostring(result) or ("Recording error: " .. tostring(result)), ok and "Success" or "Error")
 	end
+	tab:Button({ Name = "Refresh recordings", Icon = "refresh-cw", Callback = refresh })
 	tab:Button({
 		Name = "Inspect recording",
 		Icon = "file-search",
@@ -155,6 +152,7 @@ return function(tab, context)
 			end)
 		end,
 	})
+	tab:Section("Convert and export",true)
 	tab:Button({
 		Name = "Save selected as binary",
 		Desc = "Downloads bundled selections too. Creates a new revision if needed.",
@@ -179,7 +177,6 @@ return function(tab, context)
 			end)
 		end,
 	})
-	tab:Button({ Name = "Refresh recordings", Icon = "refresh-cw", Callback = refresh })
 	tab:Section("Import a recording")
 	local url = tab:Input({ Name = "Recording URL", Placeholder = "https://…", Default = "" })
 	local map = tab:Input({ Name = "Map name", Placeholder = "Exact map name", Default = "" })
