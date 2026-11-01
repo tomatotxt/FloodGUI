@@ -26,6 +26,7 @@ These scripts require Roblox and executor APIs including local file access and l
 - A title-bar switch between blue **TAS** and red **Tools** modes. TAS shows Create & Play, Playback and Recordings; Tools shows Farming, Movement and Advanced. Maps and Settings are shared.
 - Each mode remembers its last page during the session. Switching changes presentation without restarting active engines. Detailed tuning, advanced tools and shortcuts expand when needed.
 - Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
+- TAS swim mode and creator auto-swim use the game's native `isSwimming` callback instead of spoofing root-part Position. See [native swimming](docs/NATIVE-SWIMMING.md) for capability requirements and limits.
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.
 - Automatic playback of the 177 bundled legacy JSON recordings and new binary recordings.
 - JSON/binary conversion API and creator conversion/export controls.

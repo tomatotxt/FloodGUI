@@ -291,14 +291,14 @@ return function(context)
 	bind(player, "Toggle", "GodMode", "Infinite air / health", "Keep the character's health topped up.")
 	bind(player, "Toggle", "Noclip", "Noclip", "Move through solid map geometry.")
 	bind(player, "Toggle", "AirJump", "Air jump", "Use the jump button while airborne.")
-	local swim = bind(player, "Toggle", "SwimEnabled", "TAS swim mode", "Spoof the swimming position used by TAS.")
+	local swim = bind(player, "Toggle", "SwimEnabled", "TAS swim mode", "Use the game's native swimming query.")
 	if not context.swimAvailable then
 		if swim.SetDisabled then
-			swim:SetDisabled(true, "Swim hook unavailable")
+			swim:SetDisabled(true, "Native swimming query unavailable")
 		end
 		player:Paragraph({
 			Name = "Swim unavailable",
-			Content = "This executor does not provide the required hook functions.",
+			Content = "The native isSwimming callback could not be read safely.",
 		})
 	end
 

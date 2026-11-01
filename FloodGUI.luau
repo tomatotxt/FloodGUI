@@ -692,17 +692,16 @@ TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end))
 
--- Hook Swim Mode
-if type(hookmetamethod) == "function" and type(checkcaller) == "function" then
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", function(self, index)
-        if not Session.Cancelled and not getgenv().TAS_Active and not getgenv().IsTASPlaying
-            and State.SwimEnabled and index == "Position" and self == (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and not checkcaller() then
-            return Vector3.new(-23, -153, 0)
-        end
-        return oldIndex(self, index)
-    end)
-end
+-- Native FE2 swimming query, shared with the creator and scoped to this session.
+local NativeSwim = Runtime.run("swimming.luau")(LocalPlayer, RunService.Heartbeat)
+Runtime.NativeSwim = NativeSwim
+-- Retain a disposer even if later UI loading fails before full cleanup is installed.
+Session.Cleanup = NativeSwim.destroy
+NativeSwim.override(function()
+    if not Session.Cancelled and not getgenv().TAS_Active and not getgenv().IsTASPlaying and State.SwimEnabled then
+        return true
+    end
+end)
 
 -- ==============================================================================
 -- [9] AIRFLOW USER INTERFACE
@@ -758,6 +757,7 @@ Session.Cleanup = function()
     for _, connection in ipairs(SessionConnections) do pcall(function() connection:Disconnect() end) end
     pcall(Noclip, false)
     Overrides.restoreAll()
+    NativeSwim.destroy()
     UI.destroy()
 end
 local Interface = Runtime.run("ui/main.luau")({
@@ -767,7 +767,7 @@ local Interface = Runtime.run("ui/main.luau")({
     savePreferences=SavePreferences,
     resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,
     unload=Session.Cleanup,
-    swimAvailable=type(hookmetamethod)=="function" and type(checkcaller)=="function",
+    swimAvailable=NativeSwim.available(),
     rejoin=Runtime.run("rejoin.luau")(getfenv(), Alert, TrackConnection),
     infiniteYield=function() LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source") end,
     copyInvite=function()

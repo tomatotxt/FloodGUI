@@ -91,20 +91,24 @@ end
 SendAlert("FloodGUI TAS Creator Initialized", Color3.fromRGB(238, 58, 48))
 
 -- // BYPASSES //
-if not getgenv().FloodGUICreatorHookApplied then
+if type(hookmetamethod)=="function" and type(checkcaller)=="function" and not getgenv().FloodGUICreatorHookApplied then
 local OldIndex
 OldIndex = hookmetamethod(game, "__index", function(self, key)
     if not checkcaller() then
         if IsLaunchCurrent() and getgenv().TAS_Active and key == "Archivable" then return false end
-        -- Updated: Position spoofing will now respect getgenv().TAS_Active, getgenv().EnableAutoSwim, and getgenv().PauseSpoofing
-        if IsLaunchCurrent() and getgenv().TAS_Active and getgenv().EnableAutoSwim and getgenv().IsSwimming and not getgenv().PauseSpoofing
-            and key == "Position" and self == (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) then
-            return Vector3.new(-23, -153, 0)
-        end
     end
     return OldIndex(self, key)
 end)
 getgenv().FloodGUICreatorHookApplied = true
+end
+
+-- Let FE2's character controller query swimming without a global Position hook.
+if BaseRuntime.NativeSwim then
+    local releaseSwim=BaseRuntime.NativeSwim.override(function()
+        if IsLaunchCurrent() and getgenv().TAS_Active and getgenv().EnableAutoSwim
+            and getgenv().IsSwimming and not getgenv().PauseSpoofing then return true end
+    end)
+    Own(releaseSwim)
 end
 
 pcall(function() ReplicatedStorage.Remote.ReqPasskey:InvokeServer() end)
