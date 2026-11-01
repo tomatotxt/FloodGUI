@@ -22,8 +22,9 @@ These scripts require Roblox and executor APIs including local file access and l
 
 ## Features
 
-- The original Flood-GUI Kavo fork throughout, with its blue-and-gray theme, Gotham text, compact controls and floating reopen buttons.
-- The original six tabs: TAS, Auto Farm, Local Player, Blatant, Other and Credits. TAS includes the map selector and recording browser.
+- The original Flood-GUI Kavo fork, with Gotham text, compact controls and floating reopen buttons.
+- A title-bar switch between blue **TAS** and red **Tools** modes. TAS shows Create & Play, Playback and Recordings; Tools shows Farming, Movement and Advanced. Maps and Settings are shared.
+- Each mode remembers its last page during the session. Switching changes presentation without restarting active engines. Detailed tuning, advanced tools and shortcuts expand when needed.
 - Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.
 - Automatic playback of the 177 bundled legacy JSON recordings and new binary recordings.

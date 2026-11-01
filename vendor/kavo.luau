@@ -87,6 +87,8 @@ function Utility:SetupTooltip(viewInfoBtn, moreInfo, btn, infoContainer, blurFra
     Connect = Connect or function(signal,fn) return signal:Connect(fn) end
     Connect(viewInfoBtn.MouseButton1Click, function()
         if not state.viewDe then
+            state.generation=(state.generation or 0)+1
+            local generation=state.generation
             state.viewDe = true
             state.focusing = true
             for _, v in ipairs(infoContainer:GetChildren()) do
@@ -98,6 +100,7 @@ function Utility:SetupTooltip(viewInfoBtn, moreInfo, btn, infoContainer, blurFra
             Utility:TweenObject(blurFrame, {BackgroundTransparency = 0.5}, 0.2)
             Utility:TweenObject(btn, {BackgroundColor3 = themeList.ElementColor}, 0.2)
             task.wait(1.5)
+            if state.generation~=generation or not state.alive() then return end
             state.focusing = false
             Utility:TweenObject(moreInfo, {Position = UDim2.new(0, 0, 2, 0)}, 0.2)
             Utility:TweenObject(blurFrame, {BackgroundTransparency = 1}, 0.2)
@@ -107,6 +110,8 @@ function Utility:SetupTooltip(viewInfoBtn, moreInfo, btn, infoContainer, blurFra
     
     Connect(btn.MouseButton1Click, function()
         if state.focusing then
+            state.generation=(state.generation or 0)+1
+            state.viewDe=false
             for _, v in ipairs(infoContainer:GetChildren()) do
                 Utility:TweenObject(v, {Position = UDim2.new(0, 0, 2, 0)}, 0.2)
             end
@@ -175,7 +180,7 @@ function Kavo.CreateLib(kavName, themeList, options)
         instance[prop] = modifierFunc and modifierFunc(color) or color
     end
 
-    function Kavo:ChangeColor(property, color)
+    function Tabs:ChangeColor(property, color)
         if themeList[property] then
             themeList[property] = color
             for _, entry in ipairs(ThemeRegistry) do
@@ -187,6 +192,8 @@ function Kavo.CreateLib(kavName, themeList, options)
             end
         end
     end
+    function Kavo:ChangeColor(property,color) Tabs:ChangeColor(property,color) end
+    function Tabs:RegisterAccent(instance,property) RegisterTheme(instance,property,"SchemeColor") end
 
     kavName = kavName or "Library"
     table.insert(Kavo, kavName)
@@ -344,9 +351,7 @@ function Kavo.CreateLib(kavName, themeList, options)
         moreInfo.TextSize = 14.000
         moreInfo.TextXAlignment = Enum.TextXAlignment.Left
         Instance.new("UICorner", moreInfo).CornerRadius = UDim.new(0, 4)
-        RegisterTheme(moreInfo, "BackgroundColor3", "SchemeColor", function(c)
-            return Color3.fromRGB(math.clamp(c.r*255 - 14, 0, 255), math.clamp(c.g*255 - 17, 0, 255), math.clamp(c.b*255 - 13, 0, 255))
-        end)
+        RegisterTheme(moreInfo, "BackgroundColor3", "ElementColor")
         RegisterTheme(moreInfo, "TextColor3", "TextColor", function(c)
             return themeList.SchemeColor == Color3.fromRGB(255,255,255) and Color3.fromRGB(0,0,0) or c
         end)
@@ -413,7 +418,9 @@ function Kavo.CreateLib(kavName, themeList, options)
             tabButton.BackgroundTransparency = 0
         end
 
-        Connect(tabButton.MouseButton1Click, function()
+        local Sections = {_page=page,_button=tabButton}
+        function Sections:Select()
+            if not tabButton.Visible then return end
             if Tabs.OnCancel then Tabs.OnCancel() end
             UpdateSize()
             for _, v in ipairs(Pages:GetChildren()) do v.Visible = false end
@@ -423,13 +430,21 @@ function Kavo.CreateLib(kavName, themeList, options)
                     Utility:TweenObject(v, {BackgroundTransparency = 1}, 0.2)
                 end
             end
-            Utility:TweenObject(tabButton, {BackgroundTransparency = 0}, 0.2)
+            Utility:TweenObject(tabButton, {BackgroundTransparency = 0.65}, 0.2)
+            Tabs.Selected=self
+            if Tabs.OnSelect then Tabs.OnSelect(self) end
+        end
+        Connect(tabButton.MouseButton1Click, function() Sections:Select() end)
+        local state = {focusing = false, viewDe = false,alive=function()return alive end}
+        table.insert(interactions,function()
+            state.generation=(state.generation or 0)+1
+            state.focusing=false
+            state.viewDe=false
+            blurFrame.BackgroundTransparency=1
+            for _,node in ipairs(infoContainer:GetChildren())do node.Position=UDim2.new(0,0,2,0)end
         end)
 
-        local Sections = {_page=page,_button=tabButton}
-        local state = {focusing = false, viewDe = false}
-
-        function Sections:NewSection(secName, hidden)
+        function Sections:NewSection(secName, hidden, collapsible)
             secName = secName or "Section"
             local sectionFrame = Instance.new("Frame", page)
             sectionFrame.BorderSizePixel = 0
@@ -442,7 +457,11 @@ function Kavo.CreateLib(kavName, themeList, options)
             local sectionHead = Instance.new("Frame", sectionFrame)
             sectionHead.Size = UDim2.new(0, 352, 0, 33)
             sectionHead.Visible = not hidden
-            RegisterTheme(sectionHead, "BackgroundColor3", "SchemeColor")
+            RegisterTheme(sectionHead, "BackgroundColor3", "ElementColor")
+            local sectionAccent=Instance.new("Frame",sectionHead)
+            sectionAccent.BorderSizePixel=0
+            sectionAccent.Size=UDim2.new(0,3,1,0)
+            RegisterTheme(sectionAccent,"BackgroundColor3","SchemeColor")
             Instance.new("UICorner", sectionHead).CornerRadius = UDim.new(0, 4)
 
             local sectionName = Instance.new("TextLabel", sectionHead)
@@ -476,6 +495,28 @@ function Kavo.CreateLib(kavName, themeList, options)
             updateSectionFrame()
             
             local Elements = {_frame=sectionInners}
+            if collapsible then
+                local expanded=false
+                local disclosure=Instance.new("TextButton",sectionHead)
+                disclosure.Name="SectionDisclosure"
+                disclosure.Size=UDim2.fromScale(1,1)
+                disclosure.BackgroundTransparency=1
+                disclosure.Text=""
+                disclosure.ZIndex=3
+                local function refresh()
+                    sectionInners.Visible=expanded
+                    sectionName.Text=(expanded and "▾  " or "▸  ")..secName
+                    sectionFrame.Size=UDim2.new(0,352,0,expanded and (38+sectionElListing.AbsoluteContentSize.Y) or 33)
+                end
+                function Elements:SetExpanded(value) expanded=value==true;refresh() end
+                Connect(disclosure.Activated,function()
+                    if Tabs.OnCancel then Tabs.OnCancel()end
+                    expanded=not expanded;refresh()
+                end)
+                Connect(sectionElListing:GetPropertyChangedSignal("AbsoluteContentSize"),refresh)
+                Connect(sectionlistoknvm:GetPropertyChangedSignal("AbsoluteContentSize"),refresh)
+                refresh()
+            end
 
             function Elements:NewButton(bname, tipINf, callback)
                 local ButtonFunction = {}
@@ -1158,7 +1199,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 label.TextXAlignment = Enum.TextXAlignment.Left
                 Instance.new("UICorner", label).CornerRadius = UDim.new(0, 4)
                 
-                RegisterTheme(label, "BackgroundColor3", "SchemeColor")
+                RegisterTheme(label, "BackgroundColor3", "ElementColor")
                 RegisterTheme(label, "TextColor3", "TextColor", function(c)
                     return themeList.SchemeColor == Color3.fromRGB(255,255,255) and Color3.fromRGB(0,0,0) or c
                 end)
@@ -1173,7 +1214,7 @@ function Kavo.CreateLib(kavName, themeList, options)
         end
         return Sections
     end  
-    Tabs.Gui,Tabs.Root,Tabs.OpenButton=ScreenGui,Main,floatingToggle
+    Tabs.Gui,Tabs.Root,Tabs.OpenButton,Tabs.Title=ScreenGui,Main,floatingToggle,title
     function Tabs:Toggle(open)
         if self._destroyed then return end
         if open==nil then open=not Main.Visible end

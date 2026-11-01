@@ -40,6 +40,55 @@ function Library:Window(options)
         if not window.Open then window:_cancel()end
     end)
     function window:SetKeybind(key)self._key=key end
+    function window:SetStatus(text)
+        if not self._destroyed then
+            native.Title.Text="FloodGUI • "..text
+            native.Title.TextSize=13
+            native.Title.Size=UDim2.fromOffset(260,20)
+            native.Title.Position=UDim2.new(0.017,0,0,4)
+            native.Title.TextTruncate=Enum.TextTruncate.AtEnd
+        end
+    end
+    function window:ConfigureModes(spec)
+        self._modeSpec=spec
+        self._modeTabs={}
+        local header=self.Root:FindFirstChild("MainHeader")
+        local switch=create("TextButton",header,{Name="ModeSwitch",Position=UDim2.fromOffset(285,2),
+            Size=UDim2.fromOffset(207,25),BackgroundColor3=theme.Header,BorderSizePixel=0,
+            Font=Enum.Font.Gotham,TextSize=13,TextColor3=theme.TextColor,AutoButtonColor=true,ZIndex=4})
+        create("UICorner",switch,{CornerRadius=UDim.new(0,4)})
+        self.ModeSwitch=switch
+        native.OnSelect=function(selected)
+            if self.Mode then self._modeTabs[self.Mode]=selected end
+        end
+        connect(switch.Activated,function()
+            self:SetMode(self.Mode=="TAS" and "Tools" or "TAS")
+        end)
+        self:SetMode(spec.Default or "TAS")
+    end
+    function window:SetMode(mode)
+        if self._destroyed or not self._modeSpec or not self._modeSpec[mode]then return end
+        self:_cancel()
+        self.Mode=mode
+        local config=self._modeSpec[mode]
+        for key,value in pairs({SchemeColor=config.Accent,Header=config.Header or self._modeSpec.TAS.Header or theme.Header})do
+            theme[key]=value
+            native:ChangeColor(key,value)
+        end
+        self.ModeSwitch.Text=mode=="TAS" and "TAS • Switch to Tools →" or "Tools • Switch to TAS →"
+        self.ModeSwitch.TextColor3=config.Accent
+        self.ModeSwitch.BackgroundColor3=theme.Header
+        self.ModeSwitch:SetAttribute("CurrentMode",mode)
+        local first
+        for _,tab in ipairs(self._tabs)do
+            local visible=tab.Mode==nil or tab.Mode==mode
+            tab._native._button.Visible=visible
+            tab._page.Visible=false
+            if visible and not first then first=tab._native end
+        end
+        local selected=self._modeTabs[mode] or first
+        if selected then selected:Select()end
+    end
     connect(input.InputBegan,function(pressed,processed)
         if processed or native.Capturing or input:GetFocusedTextBox()then return end
         if pressed.KeyCode==window._key then window:Toggle()end
@@ -119,9 +168,10 @@ function Library:Window(options)
 
     function window:Tab(spec)
         local page=native:NewTab(spec.Name)
-        local tab={Window=self,_page=page._page}
+        page._button.LayoutOrder=spec.Order or #self._tabs+1
+        local tab={Window=self,_page=page._page,_native=page,Mode=spec.Mode}
         local section
-        function tab:Section(name)section=page:NewSection(name);return section end
+        function tab:Section(name,collapsed)section=page:NewSection(name,false,collapsed);return section end
         local function group()
             if not section then section=page:NewSection(spec.Name,true)end
             return section
@@ -161,6 +211,10 @@ function Library:Window(options)
             else handle=g:NewLabel(opts.Text or c._name)end
             c._frame=handle.Frame
             c._native=handle
+            if kind=="Button" and opts.Style=="Primary"then
+                local outline=create("UIStroke",c._frame,{Thickness=1.5,Transparency=0.2,ApplyStrokeMode=Enum.ApplyStrokeMode.Border})
+                native:RegisterAccent(outline,"Color")
+            end
             function c._render(value)
                 suppressed=true
                 if kind=="Toggle"then handle:UpdateToggle(c._name,value==true)

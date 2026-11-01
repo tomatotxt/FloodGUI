@@ -4,19 +4,19 @@ return function(context)
 	local controls, bindings, tabs = {}, {}, {}
 	local pages = {}
 	local groups = {
-		home={"TAS","Session"}, tas={"TAS","Recording and playback"},
-		maps={"TAS","Map selection"}, files={"TAS","Recording files"},
-		farm={"Auto Farm","Automation"}, movement={"Local Player","Movement"},
-		advanced={"Blatant","Optional integrations"}, settings={"Other","Settings"}, about={"Credits","Credits and information"},
+		home={"Create & Play","Start here","TAS",1}, tas={"Playback","Playback controls","TAS",2},
+		maps={"Maps","Choose a map",nil,4}, files={"Recordings","Your recording library","TAS",3},
+		farm={"Farming","Automation","Tools",1}, movement={"Movement","Player movement","Tools",2},
+		advanced={"Advanced","Optional tools","Tools",3}, settings={"Settings","Interface and shortcuts",nil,5}, about={"Settings","Credits and help",nil,5},
 	}
 	local function tab(id, name, icon, description)
 		local group=groups[id] or {name,name}
 		local result=pages[group[1]]
 		if not result then
-			result=window:Tab({Name=group[1],Icon=icon,Desc=description})
+			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		result:Section(group[2])
+		result:Section(group[2], id=="about")
 		tabs[id] = result
 		return result
 	end
@@ -104,7 +104,7 @@ return function(context)
 	local home = tab("home", "Overview", "layout-dashboard", "Session status and quick actions")
 	home:Paragraph({
 		Name = "FloodGUI",
-		Content = "Record, replay, and manage Flood Escape 2 runs. Farming and advanced actions start off; use the tabs to choose your setup.",
+		Content = "Create a run, browse Recordings, or play the current map. Use the title-bar switch for farming and movement tools.",
 	})
 	local status = home:Paragraph({ Name = "Session", Content = "Ready" })
 	button(
@@ -114,7 +114,7 @@ return function(context)
 		"Stops farm, playback, map selection, collection, rebirth, and advanced actions.",
 		"square",
 		stop,
-		true
+		false
 	)
 	button(
 		home,
@@ -125,18 +125,18 @@ return function(context)
 		function()
 			context.execute("Record")
 			sync()
-		end
+		end,
+		true
 	)
 	button(home, "Player", "Start TAS player", "Loads the recording for the current map.", "play", function()
 		context.execute("Play")
 	end)
 
 	local farm = tab("farm", "Farming", "sprout", "Automation and round timing")
+	button(farm,"StopTools","Stop automation","Stops active automation across both modes.","square",stop)
 	farm:Section("Run mode")
 	bind(farm, "Toggle", "AutoFarm", "Auto farm", "Navigate through map buttons and the exit.")
-	bind(farm, "Toggle", "AutoPlay", "TAS auto-play", "Automatically replay a matching recording each round.")
-	bind(farm, "Toggle", "FallbackToFarm", "Farm if TAS is missing", "Use auto farm when no recording matches the map.")
-	farm:Section("Round behavior")
+	farm:Section("Round behavior", true)
 	bind(
 		farm,
 		"Toggle",
@@ -233,6 +233,8 @@ return function(context)
 	)
 
 	local tas = tab("tas", "TAS", "film", "Playback and creator preferences")
+	bind(tas, "Toggle", "AutoPlay", "Auto-play recordings", "Automatically replay a matching recording each round.")
+	bind(tas, "Toggle", "FallbackToFarm", "Farm when no recording exists", "Optional fallback to farming when no recording matches the map.")
 	button(
 		tas,
 		"LaunchCreator",
@@ -255,7 +257,7 @@ return function(context)
 		end
 		sync()
 	end)
-	tas:Section("Next playback")
+	tas:Section("Playback tuning", true)
 	bind(
 		tas,
 		"Slider",
@@ -333,6 +335,9 @@ return function(context)
 		"Smart challenges",
 		"Timed challenges",
 	}) do
+		if name=="Fast load" then advanced:Section("Loading and map actions",true)
+		elseif name=="Auto boost" then advanced:Section("Boosts",true)
+		elseif name=="Smart challenges" then advanced:Section("Challenges",true)end
 		local feature = Advanced.guard.features[name]
 		if not feature then
 			advanced:Paragraph({
@@ -429,7 +434,7 @@ return function(context)
 		"Leave when a player joins",
 		"Disconnect if another player enters the server."
 	)
-	settings:Section("Keyboard shortcuts")
+	settings:Section("Keyboard shortcuts", true)
 	for _, item in ipairs({
 		{ "GodMode", "Infinite air / health", Enum.KeyCode.R },
 		{ "Noclip", "Noclip", Enum.KeyCode.G },
@@ -488,8 +493,9 @@ return function(context)
 		"log-in",
 		context.rejoin
 	)
+	advanced:Section("External tools",true)
 	button(
-		settings,
+		advanced,
 		"InfiniteYield",
 		"Load Infinite Yield",
 		"Launch the external administration script.",
@@ -528,9 +534,14 @@ return function(context)
 		Name = "Recording formats",
 		Content = "New recordings: FE2T binary (.fe2tomatas).\nCompatible input: legacy JSON and experimental binary recordings.\nConversions are available in Recordings.",
 	})
+	window:ConfigureModes({Default="TAS",
+		TAS={Accent=Color3.fromRGB(70,150,255),Header=Color3.fromRGB(25,28,36)},
+		Tools={Accent=Color3.fromRGB(245,105,110),Header=Color3.fromRGB(36,25,29)},
+	})
 	task.spawn(function()
 		while not context.session.Cancelled and not window._destroyed do
 			sync()
+			window:SetStatus((getgenv().TAS_Active and "Creator open" or getgenv().IsTASPlaying and "Playing" or State.AutoPlay and "TAS waiting" or "Idle")..(State.AutoFarm and " • Farm on" or ""))
 			status:Set(
 				string.format(
 					"Farm: %s • TAS: %s • Creator: %s\nTarget: %s • Limit: %s",

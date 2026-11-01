@@ -54,7 +54,7 @@ return function(sources)
 	local function makeWindow(id)
 		local window = { Tabs = {}, Controls = {}, Root = frame(), Gui = frame(), Open = true }
 		function window:Tab(options)
-			local page = { Name = options.Name, Window = self, Controls = {} }
+			local page = { Name = options.Name, Mode = options.Mode, Window = self, Controls = {} }
 			for _, kind in ipairs({
 				"Button",
 				"Toggle",
@@ -108,6 +108,8 @@ return function(sources)
 		function window:SetKeybind(key)
 			self.Keybind = key
 		end
+		function window:ConfigureModes(spec) self.ModeSpec=spec;self.Mode=spec.Default end
+		function window:SetStatus(text) self.Status=text end
 		function window:Toggle(value)
 			if value == nil then
 				value = not self.Open
@@ -173,6 +175,7 @@ return function(sources)
 	}
 	globals.FloodGUIRuntime = runtime
 	local env = setmetatable({
+		Color3={fromRGB=function(r,g,b)return {r=r/255,g=g/255,b=b/255}end},
 		getgenv = function()
 			return globals
 		end,
@@ -316,11 +319,11 @@ return function(sources)
 	for _, id in ipairs({ "home", "farm", "maps", "tas", "files", "movement", "advanced", "settings", "about" }) do
 		assert(main.tabs[id], "Missing main tab: " .. id)
 	end
-	assert(#main.tabs.home.Window.Tabs == 6, "Main menu must retain the six original Kavo tabs")
-	for index, name in ipairs({"TAS", "Auto Farm", "Local Player", "Blatant", "Other", "Credits"}) do
-		assert(main.tabs.home.Window.Tabs[index].Name == name, "Incorrect original Kavo tab order")
-	end
-	assert(main.tabs.files == main.tabs.tas and main.tabs.maps == main.tabs.tas, "TAS tools must share the TAS tab")
+	assert(#main.tabs.home.Window.Tabs == 8, "Expected focused task pages and shared Settings")
+	assert(main.tabs.home.Mode=="TAS" and main.tabs.files.Mode=="TAS" and main.tabs.tas.Mode=="TAS")
+	assert(main.tabs.farm.Mode=="Tools" and main.tabs.movement.Mode=="Tools" and main.tabs.advanced.Mode=="Tools")
+	assert(main.tabs.settings.Mode==nil and main.tabs.maps.Mode==nil and main.tabs.about==main.tabs.settings)
+	assert(main.window.Mode=="TAS", "Start in the blue TAS workspace")
 	for _, key in ipairs({
 		"AutoPlay",
 		"FallbackToFarm",
@@ -512,6 +515,6 @@ return function(sources)
 	creator.Destroy()
 	assert(creator.Window._destroyed)
 	print(
-		"PASS: main/creator/player wiring, original six Kavo tabs, feature parity, synchronized toggles, spending confirmation, file actions and cleanup"
+		"PASS: main/creator/player wiring, task-based TAS/Tools groups, feature parity, synchronized toggles, spending confirmation, file actions and cleanup"
 	)
 end

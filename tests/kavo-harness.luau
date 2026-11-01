@@ -71,7 +71,7 @@ return function(vendorSource,adapterSource)
         workspace={CurrentCamera={ViewportSize=vec(1280,720)}},Color3={fromRGB=color},
         UDim={new=function(s,o)return {Scale=s,Offset=o}end},UDim2={new=dim,fromOffset=function(x,y)return dim(0,x,0,y)end,fromScale=function(x,y)return dim(x,0,y,0)end},
         Vector2={new=vec},TweenInfo={new=function()return {}end},
-        task={wait=function()end,delay=function(_,fn)table.insert(timers,fn)end},
+        task={wait=function(seconds)if seconds==1.5 then coroutine.yield()end end,delay=function(_,fn)table.insert(timers,fn)end},
     },{__index=getfenv()})
     local function load(source)local fn=assert(loadstring(source));setfenv(fn,env);return fn()end
     local vendor=load(vendorSource)
@@ -81,7 +81,7 @@ return function(vendorSource,adapterSource)
     local w=library:Window({Title="FloodGUI",Name="FloodGUI_main",Parent=playerGui,Keybind=enums.KeyCode.J})
     assert(w.Gui.Parent==playerGui and w.Root.Size.X.Offset==525 and w.Root.Size.Y.Offset==318)
     assert(w.Root.BackgroundColor3.r==35/255,"Must retain the original fork palette")
-    local page=w:Tab({Name="TAS"});page:Section("Recording")
+    local page=w:Tab({Name="TAS",Mode="TAS"});page:Section("Recording")
     local calls=0
     local toggle=page:Toggle({Name="Auto play",Default=true,Callback=function()calls+=1 end})
     assert(toggle:Get()==true and calls==0,"Initial model synchronization must be silent")
@@ -121,12 +121,54 @@ return function(vendorSource,adapterSource)
     assert(changed==enums.KeyCode.J and w.Open,"Binding J must not hide the window")
     key._frame.MouseButton1Click:Fire();input.WindowFocusReleased:Fire();assert(not w._native.Capturing)
     local cancelled=0;w:_listen("Cancel",function()cancelled+=1 end)
-    local other=w:Tab({Name="Other"})
+    local other=w:Tab({Name="Other",Mode="Tools"})
     other._page.Visible=false
     -- Native tabs must release held controls before switching pages.
     local nativeTabButton=w._native.Root:GetDescendants()
     for _,o in ipairs(nativeTabButton)do if o:IsA("TextButton")and o.Text=="Other"then o.MouseButton1Click:Fire()end end
     assert(cancelled>0 and other._page.Visible)
+    local tuning=page:Section("Recording options",true)
+    page:Toggle({Name="Capture lighting",Default=false})
+    assert(not tuning._frame.Visible,"Secondary options should start collapsed")
+    local disclosure=tuning._frame.Parent:FindFirstChildWhichIsA("Frame"):FindFirstChild("SectionDisclosure")
+    assert(disclosure);disclosure.Activated:Fire()
+    assert(tuning._frame.Visible,"Disclosure must reveal secondary controls")
+    disclosure.Activated:Fire();assert(not tuning._frame.Visible,"Disclosure must collapse again")
+    local shared=w:Tab({Name="Settings"})
+    w:ConfigureModes({Default="TAS",TAS={Accent=color(70,150,255)},Tools={Accent=color(245,105,110)}})
+    assert(w.Mode=="TAS" and page._page.Visible and not other._native._button.Visible and shared._native._button.Visible)
+    local before=calls
+    page._page.CanvasPosition=vec(0,125)
+    local tooltipThread=coroutine.create(function()
+        toggle._frame:FindFirstChildWhichIsA("ImageButton").MouseButton1Click:Fire()
+    end)
+    assert(coroutine.resume(tooltipThread))
+    assert(coroutine.status(tooltipThread)=="suspended")
+    finger.Position=vec(80,0);sliderBar.InputBegan:Fire(finger)
+    local beforeModeSlider=sliderValue
+    w.ModeSwitch.Activated:Fire()
+    assert(coroutine.resume(tooltipThread),"An old tooltip worker failed after switching modes")
+    finger.Position=vec(140,0);input.InputChanged:Fire(finger)
+    assert(sliderValue==beforeModeSlider,"Mode switch retained a hidden slider drag")
+    assert(w.Mode=="Tools" and other._page.Visible and not page._native._button.Visible)
+    assert(w.ModeSwitch.Text:find("Tools") and w._native.OpenButton:GetChildren()[1]~=nil)
+    shared._native:Select()
+    w:SetMode("TAS");assert(page._page.Visible and toggle:Get()==true and calls==before)
+    assert(page._page.CanvasPosition.Y==125,"Switching modes lost the user's scroll position")
+    w:SetMode("Tools");assert(shared._page.Visible,"Each mode must remember its last selected page")
+    local modeConfirmed=false
+    w:Confirm({Callback=function()modeConfirmed=true end})
+    w:SetMode("TAS");assert(w._modal==nil and not modeConfirmed,"Mode switching must cancel pending confirmations")
+    w:SetMode("Tools")
+    w:SetMode("invalid");assert(w.Mode=="Tools")
+    local second=library:Window({Title="Creator",Name="Creator",Parent=playerGui})
+    local oldColor=second.Root.BackgroundColor3
+    local secondPage=second:Tab({Name="Record"})
+    local secondAccent=secondPage._native._button.BackgroundColor3
+    w:SetMode("TAS")
+    assert(secondPage._native._button.BackgroundColor3==secondAccent and second.Root.BackgroundColor3==oldColor,"Mode theme leaked to another window")
+    second:Destroy()
+    w:SetStatus("Recording");assert(w._native.Title.Text=="FloodGUI • Recording")
     local confirmed=0
     w:Confirm({Title="Confirm",Content="Continue?",Callback=function()confirmed+=1 end})
     local confirmButton
@@ -142,5 +184,5 @@ return function(vendorSource,adapterSource)
     assert(w._destroyed and input.InputBegan:Count()==0 and input.InputChanged:Count()==0,"External destruction leaked Kavo input listeners")
     toggle:Set(false);choice:Refresh({});slider:SetDisabled(true)
     assert(calls==1,"Destroyed controls must not invoke callbacks")
-    print("PASS: actual Kavo fork and renderer, original style, silent state, fractional/touch sliders, files, key capture, modal safety and cleanup")
+    print("PASS: actual Kavo modes, remembered pages, state preservation, isolated themes, disclosure, silent state, touch sliders, dialogs and cleanup")
 end
