@@ -407,7 +407,7 @@ function Kavo.CreateLib(kavName, themeList, options)
 
         local function UpdateSize()
             local cS = pageListing.AbsoluteContentSize
-            Utility:TweenObject(page, {CanvasSize = UDim2.new(0, cS.X, 0, cS.Y)}, 0.15)
+            page.CanvasSize = UDim2.new(0, 0, 0, cS.Y)
         end
         Connect(pageListing:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateSize)
         UpdateSize()
@@ -450,9 +450,8 @@ function Kavo.CreateLib(kavName, themeList, options)
             sectionFrame.BorderSizePixel = 0
             RegisterTheme(sectionFrame, "BackgroundColor3", "Background")
 
-            local sectionlistoknvm = Instance.new("UIListLayout", sectionFrame)
-            sectionlistoknvm.SortOrder = Enum.SortOrder.LayoutOrder
-            sectionlistoknvm.Padding = UDim.new(0, 5)
+            sectionFrame.ClipsDescendants=true
+            local expanded=not collapsible
 
             local sectionHead = Instance.new("Frame", sectionFrame)
             sectionHead.Size = UDim2.new(0, 352, 0, 33)
@@ -479,7 +478,7 @@ function Kavo.CreateLib(kavName, themeList, options)
 
             local sectionInners = Instance.new("Frame", sectionFrame)
             sectionInners.BackgroundTransparency = 1.000
-            sectionInners.Position = UDim2.new(0, 0, 0.19, 0)
+            sectionInners.Position = UDim2.fromOffset(0, hidden and 0 or 38)
             
             local sectionElListing = Instance.new("UIListLayout", sectionInners)
             sectionElListing.SortOrder = Enum.SortOrder.LayoutOrder
@@ -487,26 +486,41 @@ function Kavo.CreateLib(kavName, themeList, options)
 
             local function updateSectionFrame()
                 sectionInners.Size = UDim2.new(1, 0, 0, sectionElListing.AbsoluteContentSize.Y)
-                sectionFrame.Size = UDim2.new(0, 352, 0, sectionlistoknvm.AbsoluteContentSize.Y)
+                local headerHeight=hidden and 0 or 33
+                local contentHeight=sectionElListing.AbsoluteContentSize.Y
+                sectionInners.Visible=expanded
+                sectionFrame.Size=UDim2.fromOffset(352,headerHeight+(expanded and (contentHeight+(hidden and 0 or 5)) or 0))
             end
 
             Connect(sectionElListing:GetPropertyChangedSignal("AbsoluteContentSize"), updateSectionFrame)
-            Connect(sectionlistoknvm:GetPropertyChangedSignal("AbsoluteContentSize"), updateSectionFrame)
             updateSectionFrame()
             
             local Elements = {_frame=sectionInners}
             if collapsible then
-                local expanded=false
                 local disclosure=Instance.new("TextButton",sectionHead)
                 disclosure.Name="SectionDisclosure"
                 disclosure.Size=UDim2.fromScale(1,1)
                 disclosure.BackgroundTransparency=1
                 disclosure.Text=""
                 disclosure.ZIndex=3
+                local arrow=Instance.new("Frame",sectionHead)
+                arrow.Name="DisclosureArrow"
+                arrow.BackgroundTransparency=1
+                arrow.Position=UDim2.new(1,-25,0.5,-7)
+                arrow.Size=UDim2.fromOffset(14,14)
+                for index,rotation in ipairs({45,-45})do
+                    local arm=Instance.new("Frame",arrow)
+                    arm.BorderSizePixel=0
+                    arm.Size=UDim2.fromOffset(8,2)
+                    arm.Position=UDim2.fromOffset(3,index==1 and 4 or 9)
+                    arm.Rotation=rotation
+                    RegisterTheme(arm,"BackgroundColor3","TextColor")
+                end
+                sectionName.Size=UDim2.new(1,-36,1,0)
                 local function refresh()
-                    sectionInners.Visible=expanded
-                    sectionName.Text=(expanded and "▾  " or "▸  ")..secName
-                    sectionFrame.Size=UDim2.new(0,352,0,expanded and (38+sectionElListing.AbsoluteContentSize.Y) or 33)
+                    sectionName.Text=secName
+                    arrow.Rotation=expanded and 90 or 0
+                    updateSectionFrame()
                 end
                 function Elements:SetExpanded(value) expanded=value==true;refresh() end
                 Connect(disclosure.Activated,function()
@@ -514,7 +528,6 @@ function Kavo.CreateLib(kavName, themeList, options)
                     expanded=not expanded;refresh()
                 end)
                 Connect(sectionElListing:GetPropertyChangedSignal("AbsoluteContentSize"),refresh)
-                Connect(sectionlistoknvm:GetPropertyChangedSignal("AbsoluteContentSize"),refresh)
                 refresh()
             end
 

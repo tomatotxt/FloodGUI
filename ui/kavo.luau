@@ -75,7 +75,7 @@ function Library:Window(options)
             theme[key]=value
             native:ChangeColor(key,value)
         end
-        self.ModeSwitch.Text=mode=="TAS" and "TAS • Switch to Tools →" or "Tools • Switch to TAS →"
+        self.ModeSwitch.Text=mode=="TAS" and "TAS • Switch to Tools >" or "Tools • Switch to TAS >"
         self.ModeSwitch.TextColor3=config.Accent
         self.ModeSwitch.BackgroundColor3=theme.Header
         self.ModeSwitch:SetAttribute("CurrentMode",mode)
@@ -173,7 +173,7 @@ function Library:Window(options)
         local section
         function tab:Section(name,collapsed)
             section=page:NewSection(name,false,true)
-            section:SetExpanded(collapsed==false)
+            section:SetExpanded(false)
             return section
         end
         local function group()
@@ -215,14 +215,22 @@ function Library:Window(options)
             else handle=g:NewLabel(opts.Text or c._name)end
             c._frame=handle.Frame
             c._native=handle
-            local symbols={clapperboard="●",video="●",play="▶",square="■"}
+            local symbols={clapperboard="record",video="record",play="play",square="stop"}
             if kind=="Button" and symbols[opts.Icon]then
                 local old=c._frame:FindFirstChildWhichIsA("ImageLabel")
                 if old then
                     old.Visible=false
-                    local icon=create("TextLabel",c._frame,{Name="ActionSymbol",Position=old.Position,Size=old.Size,
-                        BackgroundTransparency=1,Font=Enum.Font.Gotham,TextSize=18,Text=symbols[opts.Icon]})
-                    native:RegisterAccent(icon,"TextColor3")
+                    local icon=create("Frame",c._frame,{Name="ActionSymbol",Position=old.Position,Size=old.Size,BackgroundTransparency=1})
+                    if symbols[opts.Icon]=="play"then
+                        for index,rotation in ipairs({45,-45})do
+                            local arm=create("Frame",icon,{BorderSizePixel=0,Size=UDim2.fromOffset(10,3),Position=UDim2.fromOffset(5,index==1 and 6 or 12),Rotation=rotation})
+                            native:RegisterAccent(arm,"BackgroundColor3")
+                        end
+                    else
+                        local shape=create("Frame",icon,{BorderSizePixel=0,Size=UDim2.fromOffset(11,11),Position=UDim2.fromOffset(5,5)})
+                        if symbols[opts.Icon]=="record"then create("UICorner",shape,{CornerRadius=UDim.new(1,0)})end
+                        native:RegisterAccent(shape,"BackgroundColor3")
+                    end
                 end
             end
             if kind=="Button" and opts.Style=="Primary"then
