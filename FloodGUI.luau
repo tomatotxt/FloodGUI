@@ -77,6 +77,10 @@ local AlertRemote = RemoteFolder:WaitForChild("Alert")
 local GameState = Runtime.run("gamestate.luau")(RemoteFolder, TrackConnection)
 Runtime.GameState = GameState
 
+-- Native FE2 zipline assistant
+local NativeZipline = Runtime.run("zipline.luau")(LocalPlayer, RemoteFolder, TrackConnection)
+Runtime.NativeZipline = NativeZipline
+
 local CONFIG = {
     UI_LIBRARY_PATH = "vendor/kavo.luau",
     TAS_CREATOR_PATH = "TAS/CREATOR/creator.luau",
@@ -146,7 +150,8 @@ local State = {
     GodMode = false,
     Noclip = false,
     AirJump = false,
-    SwimEnabled = false
+    SwimEnabled = false,
+    AutoZipline = false
 }
 
 -- Preserve the player/GUI compatibility contract used by the older branches.
@@ -679,6 +684,7 @@ TrackConnection(RunService.Heartbeat:Connect(function()
     local engineOwnsCharacter = getgenv().IsTASPlaying or getgenv().TAS_Active
     if engineOwnsCharacter then return end
     if State.Noclip then Noclip(true) end
+    if State.AutoZipline and not engineOwnsCharacter then NativeZipline.check() end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -815,6 +821,7 @@ Session.Cleanup = function()
     pcall(Noclip, false)
     Overrides.restoreAll()
     NativeSwim.destroy()
+    if NativeZipline and NativeZipline.destroy then NativeZipline.destroy() end
     if GameState and GameState.destroy then GameState.destroy() end
     UI.destroy()
 end
@@ -826,6 +833,7 @@ local Interface = Runtime.run("ui/main.luau")({
     resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,
     unload=Session.Cleanup,
     swimAvailable=NativeSwim.available(),
+    zipline=NativeZipline,
     rejoin=Runtime.run("rejoin.luau")(getfenv(), Alert, TrackConnection),
     infiniteYield=function() LoadExternalScript("https://raw.githubusercontent.com/edgeiy/infiniteyield/master/source") end,
     copyInvite=function()

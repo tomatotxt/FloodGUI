@@ -48,6 +48,8 @@ return function(context)
 			elseif getgenv().FloodGUIStopPlayer then
 				getgenv().FloodGUIStopPlayer(false)
 			end
+		elseif key == "AutoZipline" then
+			if context.zipline then context.zipline.setEnabled(value) end
 		elseif key == "Noclip" then
 			context.noclip(value)
 		elseif key == "Notifications" then
@@ -292,6 +294,7 @@ return function(context)
 	bind(player, "Toggle", "Noclip", "Noclip", "Move through solid map geometry.")
 	bind(player, "Toggle", "AirJump", "Air jump", "Use the jump button while airborne.")
 	local swim = bind(player, "Toggle", "SwimEnabled", "TAS swim mode", "Use the game's native swimming query.")
+	bind(player, "Toggle", "AutoZipline", "Zipline assistant", "Automatically trigger and smooth ziplines using native rope data.")
 	if not context.swimAvailable then
 		if swim.SetDisabled then
 			swim:SetDisabled(true, "Native swimming query unavailable")

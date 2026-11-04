@@ -848,6 +848,8 @@ local function SetupMap()
         end
 
         if FailedScan then
+            Root.Anchored = false
+            Hum:ChangeState(Enum.HumanoidStateType.Running)
             if LiveExitRegion then Root.CFrame = LiveExitRegion.CFrame + Vector3.new(0, 100, 0); Root.Velocity = Vector3.new(0,0,0)
             else Root.CFrame = LastSafePos + Vector3.new(0, 10, 0); Root.Velocity = Vector3.new(0,0,0) end
         else
@@ -883,7 +885,9 @@ local function SetupMap()
     SendAlert("Respawning...", Color3.fromRGB(255, 255, 0))
     LocalPlayer.CharacterAdded:Wait(); Char = LocalPlayer.Character; task.wait(1)
     if Stopped then return end
-    game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("RemoveWaiting"):FireServer()
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remote")
+    local removeWaiting = remote:FindFirstChild("RemoveWaiting")
+    if removeWaiting then removeWaiting:FireServer() end
 
     local FE2Env = getsenv(Char:WaitForChild("FE2_Character"))
     local startZipline = FE2Env.startZipline
@@ -1334,7 +1338,8 @@ end))
 
 -- // MAIN EXECUTION //
 task.spawn(function()
-    local RopeEvent = game:GetService("ReplicatedStorage"):WaitForChild("Remote"):WaitForChild("UpdRopeData")
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remote")
+    local RopeEvent = remote:FindFirstChild("UpdRopeData") or remote:FindFirstChild("oBoPcLGDkNQjGAPHvlWujHyuqmatLeGx")
     if RopeEvent then
         AddConnection(RopeEvent.OnClientEvent:Connect(function(val) if type(val) == "table" and not ClonedMap then RopeTable = val end end))
     end

@@ -16,8 +16,9 @@ All 20 source scripts were reviewed. Originals remain in the separate local work
 | EXPERIMENTS/new.luau | Minified experimental implementation overlaps the above; its useful mechanisms are maintained in readable modules. |
 | TAS Editor, TAS Record Voiz, Beta-Creator | Older recording/rewind/savestate/export implementations are superseded by the integrated creator. |
 | TAS Player + backup variant | Superseded by the shared current player with JSON/binary support. |
-| CREATOR/fe2cm.luau | Kept separate as requested; Community Maps is not enabled. |
-| Animation, UndoAnimation, ZiplineFix | Kept outside the runtime pending an explicit choice. Whole-controller animation replacement and assumed zipline upvalues can conflict with the integrated TAS engine. |
+| CREATOR/fe2cm.luau | Integrated into creator.luau: added Community Maps obfuscated rope remote alias oBoPcLGDkNQjGAPHvlWujHyuqmatLeGx, unanchoring on scan completion, and CM respawn handling. |
+| ZiplineFix | Ported as native zipline assistant (zipline.luau): respects native 40 default RopeSpeed clamped to 20..200, uses canonical UpdRopeData before visual reconstruction, and hooks RopeStart proximity cleanly. |
+| reach, tashelper, minigui | Ported as standalone entry points (reach.luau, tashelper.luau, minigui.luau) powered by FloodGUI's runtime and native lifecycle. |
 
 ## Capability checks
 
