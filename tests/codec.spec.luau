@@ -108,6 +108,38 @@ local json = {
 local converted = Codec.convert("legacy-json", "binary", { mapName = "Legacy" }, json)
 assert(Codec.convert(converted, "json", nil, json) == "exported-json" and #jsonFrames == 178)
 assert(#Codec.decode("\239\187\191legacy-json", json) == 178, "UTF-8 BOM JSON should be importable")
+
+-- Sliding and swimming flags roundtrip
+local flagFrame = {
+	time = 0.5,
+	CCFrame = { 10, 20, 30, 0, 0, 0 },
+	CCameraCFrame = { 10, 25, 35, 0, 0, 0 },
+	VVelocity = { 1, 0, -1 },
+	AAnimation = { "slide", 0.5 },
+	Sliding = true,
+	Swimming = false,
+}
+local flagBinary = Codec.encodeBinary({ flagFrame })
+local decodedFlags = Codec.decodeBinary(flagBinary)
+assert(decodedFlags[1].Sliding == true, "Sliding flag must roundtrip through binary encoding")
+assert(decodedFlags[1].Swimming == nil, "False/nil swimming flag must decode as nil in binary")
+
+local swimFrame = table.clone(flagFrame)
+swimFrame.Sliding = false
+swimFrame.Swimming = true
+swimFrame.AAnimation = { "swim", 0.1 }
+local swimBinary = Codec.encodeBinary({ swimFrame })
+local decodedSwim = Codec.decodeBinary(swimBinary)
+assert(decodedSwim[1].Sliding == nil, "False/nil sliding flag must decode as nil in binary")
+assert(decodedSwim[1].Swimming == true, "Swimming flag must roundtrip through binary encoding")
+
+local bothFrame = table.clone(flagFrame)
+bothFrame.Sliding = true
+bothFrame.Swimming = true
+local bothBinary = Codec.encodeBinary({ bothFrame })
+local decodedBoth = Codec.decodeBinary(bothBinary)
+assert(decodedBoth[1].Sliding == true and decodedBoth[1].Swimming == true, "Both flags must roundtrip simultaneously")
+
 print(
 	"PASS: 178 recording roundtrips, rotations/gimbal lock, v2 compatibility, metadata, JSON conversion, malformed data rejection"
 )

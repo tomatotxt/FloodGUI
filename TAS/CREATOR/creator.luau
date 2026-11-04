@@ -186,23 +186,32 @@ local UI_Elements = nil
 local TimeText, FrameCountLabel, StatusLabel, MapEventLabel
 
 -- // DATA PACKING (OPTIMIZATION) //
-local PACK_FORMAT = "d" .. string.rep("f", 28) .. "s"
+-- PACK_FORMAT includes a trailing byte for flags: bit 0 = Sliding, bit 1 = Swimming
+local PACK_FORMAT = "d" .. string.rep("f", 28) .. "sB"
+local LEGACY_PACK_FORMAT = "d" .. string.rep("f", 28) .. "s"
 
-local function PackFrame(Time, Vel, CF, CamCF, Anim)
-    local animName = Anim[1] or "idle"
-    local animSpeed = Anim[2] or 0
+local function PackFrame(Time, Vel, CF, CamCF, Anim, isSliding, isSwimming)
+    local animName = Anim and Anim[1] or "idle"
+    local animSpeed = Anim and Anim[2] or 0
     local x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22 = CF:GetComponents()
     local cx, cy, cz, cR00, cR01, cR02, cR10, cR11, cR12, cR20, cR21, cR22 = CamCF:GetComponents()
-    return string.pack(PACK_FORMAT, Time, Vel.X, Vel.Y, Vel.Z, x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22, cx, cy, cz, cR00, cR01, cR02, cR10, cR11, cR12, cR20, cR21, cR22, animSpeed, animName)
+    local flags = (isSliding and 1 or 0) + (isSwimming and 2 or 0)
+    return string.pack(PACK_FORMAT, Time, Vel.X, Vel.Y, Vel.Z, x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22, cx, cy, cz, cR00, cR01, cR02, cR10, cR11, cR12, cR20, cR21, cR22, animSpeed, animName, flags)
 end
 
 local function UnpackFrame(data)
-    local t, vx, vy, vz, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, cm1, cm2, cm3, cm4, cm5, cm6, cm7, cm8, cm9, cm10, cm11, cm12, asp, anm = string.unpack(PACK_FORMAT, data)
+    local ok, t, vx, vy, vz, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, cm1, cm2, cm3, cm4, cm5, cm6, cm7, cm8, cm9, cm10, cm11, cm12, asp, anm, flags = pcall(string.unpack, PACK_FORMAT, data)
+    if not ok then
+        t, vx, vy, vz, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, cm1, cm2, cm3, cm4, cm5, cm6, cm7, cm8, cm9, cm10, cm11, cm12, asp, anm = string.unpack(LEGACY_PACK_FORMAT, data)
+        flags = 0
+    end
     return {
         Time = t, Velocity = Vector3.new(vx, vy, vz),
         CFrame = CFrame.new(c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12),
         CameraCFrame = CFrame.new(cm1, cm2, cm3, cm4, cm5, cm6, cm7, cm8, cm9, cm10, cm11, cm12),
-        Animation = {anm, asp}
+        Animation = {anm, asp},
+        Sliding = bit32.band(flags, 1) ~= 0,
+        Swimming = bit32.band(flags, 2) ~= 0
     }
 end
 
@@ -281,16 +290,53 @@ local function GetPlayerCFrame()
 end
 
 local LastRecordedTime = 0
+local function IsCharacterSliding()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    if CurrentAnim and CurrentAnim[1] == "slide" then return true end
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if root and root.Size.Y <= 1.2 then return true end
+    local hum = character:FindFirstChild("Humanoid")
+    if hum and hum.HipHeight <= -1 then return true end
+    if root then
+        local sp = root:FindFirstChild("SlideParticles")
+        if sp and sp.Enabled == true then return true end
+    end
+    return false
+end
+
+local function IsCharacterSwimming()
+    local playerScripts = LocalPlayer:FindFirstChild("PlayerScripts")
+    local clMain = playerScripts and playerScripts:FindFirstChild("CL_MAIN_GameScript")
+    local isSwimmingFn = clMain and clMain:FindFirstChild("isSwimming")
+    if isSwimmingFn and isSwimmingFn:IsA("RemoteFunction") or (isSwimmingFn and isSwimmingFn:IsA("BindableFunction")) then
+        local ok, val = pcall(function() return isSwimmingFn:Invoke() end)
+        if ok and type(val) == "boolean" then return val end
+    end
+    if getgenv().IsSwimming ~= nil then return getgenv().IsSwimming end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root and WaterParts then
+        for _, wp in ipairs(WaterParts) do
+            if IsPartEntirelyInPart(wp, root) then return true end
+        end
+    end
+    return false
+end
+
 local function CaptureFrameData()
     local rawTime = os.clock() - RunStart - TimeOffset
     local frameTime = math.max(LastRecordedTime, rawTime)
     LastRecordedTime = frameTime
+    local isSliding = IsCharacterSliding()
+    local isSwimming = IsCharacterSwimming()
     return PackFrame(
         frameTime,
         LocalPlayer.Character.HumanoidRootPart.Velocity,
         GetPlayerCFrame(),
         workspace.CurrentCamera.CFrame,
-        CurrentAnim
+        CurrentAnim,
+        isSliding,
+        isSwimming
     )
 end
 
@@ -310,7 +356,9 @@ local function CompileTASData()
                     CCFrame = {F.CFrame.X, F.CFrame.Y, F.CFrame.Z, rx, ry, rz},
                     VVelocity = {F.Velocity.X, F.Velocity.Y, F.Velocity.Z},
                     AAnimation = F.Animation or {"walk", 0.1},
-                    time = F.Time
+                    time = F.Time,
+                    Sliding = F.Sliding == true or nil,
+                    Swimming = F.Swimming == true or nil
                 })
             end
          end
@@ -705,6 +753,9 @@ function LoadLastSavestate()
 
         OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid)
         if Frame.Animation[1] == "walk" then AnimEnv.setAnimationSpeed(0.76) end
+
+        ToggleTASSlide(Frame.Sliding == true)
+        getgenv().IsSwimming = (Frame.Swimming == true)
 
         task.spawn(function() UpdateTimeDisplay(Frame.Time) end)
         SendAlert("Savestate Loaded", Color3.fromRGB(0, 255, 255))
@@ -1138,6 +1189,9 @@ function RewindFrame()
 
             if Frame.Animation[1] then OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid) end
             if Frame.Animation[1] == "walk" then AnimEnv.setAnimationSpeed(0.76) end
+
+            ToggleTASSlide(Frame.Sliding == true)
+            getgenv().IsSwimming = (Frame.Swimming == true)
 
             task.spawn(function() UpdateTimeDisplay(VisualTime) end)
         end

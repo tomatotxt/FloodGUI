@@ -39,6 +39,8 @@ function Codec.validate(frames)
 			)
 		end
 		assert(frame.AAnimationChanged == nil or finite(frame.AAnimationChanged), "Invalid animation marker")
+		assert(frame.Sliding == nil or type(frame.Sliding) == "boolean", "Invalid sliding flag")
+		assert(frame.Swimming == nil or type(frame.Swimming) == "boolean", "Invalid swimming flag")
 	end
 	return frames
 end
@@ -139,7 +141,10 @@ function Codec.encodeBinary(frames, metadata)
 		local animation = frame.AAnimation or { "idle", 0 }
 		write("f32", 4, animation[2])
 		str(animation[1])
-		local flags = (frame.AAnimation == nil and 1 or 0) + (frame.AAnimationChanged ~= nil and 2 or 0)
+		local flags = (frame.AAnimation == nil and 1 or 0)
+			+ (frame.AAnimationChanged ~= nil and 2 or 0)
+			+ (frame.Sliding == true and 4 or 0)
+			+ (frame.Swimming == true and 8 or 0)
 		write("u8", 1, flags)
 		if frame.AAnimationChanged ~= nil then
 			write("f64", 8, frame.AAnimationChanged)
@@ -187,11 +192,17 @@ function Codec.decodeBinary(bytes)
 		frame.AAnimation, frame.AAnimationChanged = { str(), speed }, speed
 		if version == 3 then
 			local flags = read("u8", 1)
-			assert(flags <= 3, "Unknown frame flags")
+			assert(flags <= 15, "Unknown frame flags")
 			if flags % 2 == 1 then
 				frame.AAnimation = nil
 			end
-			frame.AAnimationChanged = flags >= 2 and read("f64", 8) or nil
+			frame.AAnimationChanged = bit32.band(flags, 2) ~= 0 and read("f64", 8) or nil
+			if bit32.band(flags, 4) ~= 0 then
+				frame.Sliding = true
+			end
+			if bit32.band(flags, 8) ~= 0 then
+				frame.Swimming = true
+			end
 		end
 		frames[index] = frame
 	end

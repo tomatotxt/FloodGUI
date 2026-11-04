@@ -490,7 +490,7 @@ end
 
 Animate.playAnimation = function() end
 
-local function activateAnimation(AnimData, Elapsed)
+local function activateAnimation(AnimData, Elapsed, frameSliding, frameSwimming)
     local character = LP.Character
     if not character or not character.Parent then return end
     local head = character:FindFirstChild("Head")
@@ -502,7 +502,7 @@ local function activateAnimation(AnimData, Elapsed)
     local animTime = AnimData and AnimData[2] or 0.1
     Elapsed = Elapsed or 0
 
-    local checkSubmerged = IsInWater(RootPart.Position + Vector3.new(0, 1, 0))
+    local checkSubmerged = (frameSwimming ~= nil) and (frameSwimming == true) or IsInWater(RootPart.Position + Vector3.new(0, 1, 0))
 
     -- Native-Derived Scaling Slide Duration
     -- Elapsed already uses authored time; convert playback rate exactly once.
@@ -558,38 +558,27 @@ local function activateAnimation(AnimData, Elapsed)
         IsCurrentlyZiplining = false
     end
 
-    -- 1. ABSOLUTE PRIORITY SLIDE LOCK (Guarantees exactly nativeSlideDuration, unless overridden by Zipline or Manual Slide)
-    if IsSliding then
-        if not IsManualSlide and (Elapsed - SlideStartTime >= nativeSlideDuration) then
-            toggleSlide(false)
-            IsSliding = false
-            LastSlideEndTime = Elapsed
-            -- Safely transition to correct post-slide state
-            if checkSubmerged then
-                IsCurrentlySwimming = true
-                if character.Animate:FindFirstChild("ToggleSwim") then
-                    pcall(function() character.Animate.ToggleSwim:Fire(true) end)
-                end
-                if RootPart.Velocity.Magnitude > 1.5 then n = "swim" else n = "swimidle" end
-            else
-                IsCurrentlySwimming = false
-                if character.Animate:FindFirstChild("ToggleSwim") then
-                    pcall(function() character.Animate.ToggleSwim:Fire(false) end)
-                end
-                if humanoid.FloorMaterial == Enum.Material.Air then
-                    n = "fall"
-                elseif RootPart.Velocity.Magnitude > 1 then
-                    n = "walk"
-                else
-                    n = "idle"
-                end
+    -- Authoritative Sliding check if recorded flag is available
+    if frameSliding ~= nil and not IsCurrentlyZiplining and not IsManualZipline then
+        if frameSliding == true then
+            if not IsSliding then
+                toggleSlide(true)
+                IsSliding = true
+                SlideStartTime = Elapsed
             end
-        else
             n = "slide"
+        else
+            if IsSliding and not IsManualSlide then
+                toggleSlide(false)
+                IsSliding = false
+                LastSlideEndTime = Elapsed
+            end
         end
-    else
-        -- 2. NORMAL ENVIRONMENT & PHYSICS STATES (When not sliding)
-        if checkSubmerged then
+    end
+
+    -- Authoritative Swimming check if recorded flag is available
+    if frameSwimming ~= nil then
+        if frameSwimming == true then
             IsCurrentlySwimming = true
             if RootPart.Velocity.Magnitude > 1.5 then n = "swim" else n = "swimidle" end
             if character.Animate:FindFirstChild("ToggleSwim") then
@@ -600,8 +589,58 @@ local function activateAnimation(AnimData, Elapsed)
             if character.Animate:FindFirstChild("ToggleSwim") then
                 pcall(function() character.Animate.ToggleSwim:Fire(false) end)
             end
+        end
+    end
 
-            if not IsCurrentlyZiplining then
+    -- Heuristic Fallback (when frameSliding is nil)
+    if frameSliding == nil then
+        -- 1. ABSOLUTE PRIORITY SLIDE LOCK (Guarantees exactly nativeSlideDuration, unless overridden by Zipline or Manual Slide)
+        if IsSliding then
+            if not IsManualSlide and (Elapsed - SlideStartTime >= nativeSlideDuration) then
+                toggleSlide(false)
+                IsSliding = false
+                LastSlideEndTime = Elapsed
+                -- Safely transition to correct post-slide state
+                if checkSubmerged then
+                    IsCurrentlySwimming = true
+                    if character.Animate:FindFirstChild("ToggleSwim") then
+                        pcall(function() character.Animate.ToggleSwim:Fire(true) end)
+                    end
+                    if RootPart.Velocity.Magnitude > 1.5 then n = "swim" else n = "swimidle" end
+                else
+                    IsCurrentlySwimming = false
+                    if character.Animate:FindFirstChild("ToggleSwim") then
+                        pcall(function() character.Animate.ToggleSwim:Fire(false) end)
+                    end
+                    if humanoid.FloorMaterial == Enum.Material.Air then
+                        n = "fall"
+                    elseif RootPart.Velocity.Magnitude > 1 then
+                        n = "walk"
+                    else
+                        n = "idle"
+                    end
+                end
+            else
+                n = "slide"
+            end
+        else
+            -- 2. NORMAL ENVIRONMENT & PHYSICS STATES (When not sliding)
+            if frameSwimming == nil then
+                if checkSubmerged then
+                    IsCurrentlySwimming = true
+                    if RootPart.Velocity.Magnitude > 1.5 then n = "swim" else n = "swimidle" end
+                    if character.Animate:FindFirstChild("ToggleSwim") then
+                        pcall(function() character.Animate.ToggleSwim:Fire(true) end)
+                    end
+                else
+                    IsCurrentlySwimming = false
+                    if character.Animate:FindFirstChild("ToggleSwim") then
+                        pcall(function() character.Animate.ToggleSwim:Fire(false) end)
+                    end
+                end
+            end
+
+            if not checkSubmerged and not IsCurrentlySwimming and not IsCurrentlyZiplining then
                 if n == "slide" then
                     -- Only allow slide initiation if debounce is cleared, Y velocity is stable, AND grounded (or manually forced)
                     local absYVel = math.abs(RootPart.Velocity.Y)
@@ -622,25 +661,25 @@ local function activateAnimation(AnimData, Elapsed)
                     end
                 end
             end
+        end
+    end
 
-            -- PASSIVE EXIT: If there is no new animation data and we are NOT sliding, do not override
-            if not AnimData and not IsSliding and not IsManualZipline and not IsManualSlide then
-                return
-            end
+    -- PASSIVE EXIT: If there is no new animation data and we are NOT sliding, do not override
+    if not AnimData and not IsSliding and not IsManualZipline and not IsManualSlide then
+        return
+    end
 
-            -- General physics/movement fallbacks
-            if not IsSliding and not IsCurrentlyZiplining then
-                if humanoid:GetState() == Enum.HumanoidStateType.Physics then n = "swing" end
-                if n == "idle" or not n then
-                    if RootPart.Velocity.Magnitude > 1 then
-                        if humanoid.FloorMaterial ~= Enum.Material.Air then n = "walk" else n = "fall" end
-                    else
-                        n = "idle"
-                    end
-                end
-                if n == "fall" and RootPart.Velocity.Magnitude < 0.1 then n = "swing" end
+    -- General physics/movement fallbacks
+    if not IsSliding and not IsCurrentlyZiplining and not IsCurrentlySwimming then
+        if humanoid:GetState() == Enum.HumanoidStateType.Physics then n = "swing" end
+        if n == "idle" or not n then
+            if RootPart.Velocity.Magnitude > 1 then
+                if humanoid.FloorMaterial ~= Enum.Material.Air then n = "walk" else n = "fall" end
+            else
+                n = "idle"
             end
         end
+        if n == "fall" and RootPart.Velocity.Magnitude < 0.1 then n = "swing" end
     end
 
     if n and (n ~= LastPlayedAnim) then
@@ -707,7 +746,7 @@ local function StepPlaybackFrame(forward)
     PauseCFrame = TargetCFrame
     RootPart.CFrame = TargetCFrame
     local AnimData = FA.AAnimation
-    pcall(activateAnimation, AnimData, VisualElapsed)
+    pcall(activateAnimation, AnimData, VisualElapsed, FA.Sliding, FA.Swimming)
 end
 
 local rightKey = INPUT["Right"]
@@ -868,11 +907,11 @@ MainLoop = RS.Heartbeat:Connect(function()
 
     local AnimData = FA.AAnimation
     -- Block heuristic slide overrides if we are currently ziplining or if the animation is explicitly a zipline/swing
-    if OverrideToSlide and not IsCurrentlyZiplining and (not AnimData or (AnimData[1] ~= "zipline" and AnimData[1] ~= "swing")) then
+    if FA.Sliding == nil and OverrideToSlide and not IsCurrentlyZiplining and (not AnimData or (AnimData[1] ~= "zipline" and AnimData[1] ~= "swing")) then
         AnimData = { "slide", 0.1 }
     end
 
-    pcall(activateAnimation, AnimData, VisualElapsed)
+    pcall(activateAnimation, AnimData, VisualElapsed, FA.Sliding, FA.Swimming)
     -- The last recorded pose must be applied before releasing control.
     if atEnd and not FinishedRun then
         FinishedRun = true

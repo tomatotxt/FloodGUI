@@ -28,6 +28,7 @@ All 20 source scripts were reviewed. Originals remain in the separate local work
 - **No Lost Frames on Hitch/Lag:** The frame recording loop drains accumulated intervals (`while RecordAccumulator >= RECORD_INTERVAL`), preventing lost frames during momentary frame-rate drops while clamping lag debt.
 - **Monotonic Timestamps:** Enforces non-decreasing timestamps in `CaptureFrameData()` (`math.max(LastRecordedTime, curTime)`), eliminating micro-jitter and preventing recording validation rejections.
 - **TAS Player Physics Decoupling:** Inhibits unmanaged `FE2_Character.startZipline` during playback to prevent competing `BodyPosition` forces from fighting TAS interpolation, while signaling FE2 client/server subsystems (`RideZipline:FireServer`, `CL_AntiSideClip.Ziplining:Fire`, `CL_MAIN_GameScript.ToggleVelocity:Fire`).
+- **Authoritative Sliding & Swimming Flags:** Frame data encodes `Sliding` (bit 2) and `Swimming` (bit 3) in the binary v3 `flags` byte (and as booleans in JSON). Recording captures FE2 sliding state via `HumanoidRootPart.Size`, `Humanoid.HipHeight`, `SlideParticles`, and current animation; swimming is queried authoritatively from `CL_MAIN_GameScript.isSwimming:Invoke()` with spatial bounding box fallback. Playback in `newtasplayer.luau` applies authoritative slide and swim states without reliance on downward raycast debounces or false floor collisions, while preserving full backward compatibility for legacy recordings without flags.
 
 ## Capability checks
 
