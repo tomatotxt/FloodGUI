@@ -73,6 +73,10 @@ local UpdMapVote = RemoteFolder:WaitForChild("UpdMapVote")
 local AddedWaiting = RemoteFolder:WaitForChild("AddedWaiting")
 local AlertRemote = RemoteFolder:WaitForChild("Alert")
 
+-- Native FE2 round lifecycle and state manager
+local GameState = Runtime.run("gamestate.luau")(RemoteFolder, TrackConnection)
+Runtime.GameState = GameState
+
 local CONFIG = {
     UI_LIBRARY_PATH = "vendor/kavo.luau",
     TAS_CREATOR_PATH = "TAS/CREATOR/creator.luau",
@@ -248,6 +252,13 @@ local function Noclip(Toggle)
 end
 
 local function Check(Flag)
+    if GameState and GameState.hasState() then
+        if Flag == "InLift" then
+            return GameState.isInLift()
+        elseif Flag == "InGame" then
+            return GameState.isInGame()
+        end
+    end
     local char = GetChar()
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -401,7 +412,10 @@ local function StartAutoFarm(Map)
         local escapeSerial = State.EscapeSerial
         while not cancelled() and Check("InGame") do
             local exit = Map:FindFirstChild("ExitRegion", true)
-            if exit then
+            local remaining = GameState and GameState.getRemainingButtons()
+            local buttonsDone = (remaining ~= nil and remaining == 0)
+            local exitReady = exit and (buttonsDone or (remaining == nil and #buttons == 0))
+            if exitReady then
                 if State.PlayAfterButtons then
                     root.Anchored = false
                     root.CFrame, root.Velocity = initialPosition, Vector3.zero
@@ -427,15 +441,23 @@ local function StartAutoFarm(Map)
                     return
                 end
                 Advanced.forceWin()
-                root.CFrame = GetRandomPointInPart(exit)
+                root.CFrame = exit.CFrame
                 root.Velocity = Vector3.zero
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
             else
                 Noclip(true)
                 local direct = Advanced.directTarget(Map)
+                local activeBtn = GameState and GameState.getActiveButton()
                 if direct then
                     root.Anchored = false
                     root.CFrame = direct.CFrame
+                elseif activeBtn and activeBtn:IsDescendantOf(Map) then
+                    root.Anchored = false
+                    root.CFrame = activeBtn.CFrame
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    task.wait(0.05)
+                    hum:ChangeState(Enum.HumanoidStateType.Running)
+                    task.wait(0.05)
                 else
                     for _, entry in ipairs(buttons) do
                         if cancelled() then break end
@@ -554,13 +576,29 @@ TrackConnection(Multiplayer.ChildAdded:Connect(function(NewMap)
 end))
 
 -- Win Tracker
+if GameState then
+    GameState.onSurvived(function(survived, escapeTime)
+        if survived == true and (State.CurrentlyFarming or getgenv().IsTASPlaying) then
+            State.EscapeSerial = State.EscapeSerial + 1
+            State.Escaped = true
+            local formatted = escapeTime and string.format("%01d:%06.3f", math.floor(escapeTime / 60) % 60, escapeTime % 60) or nil
+            Alert(formatted and ("Escape confirmed by server (Time: " .. formatted .. ")") or "Escape confirmed by server.", "Success")
+            task.delay(1, function()
+                State.Escaped = false
+            end)
+        end
+    end)
+end
+
 TrackConnection(AlertRemote.OnClientEvent:Connect(function(msg)
     if type(msg) == "string" and State.CurrentlyFarming and (msg:lower():match("escaped") or msg:lower():match("survived")) then
-        State.EscapeSerial = State.EscapeSerial + 1
-        State.Escaped = true
-        -- This delay and reset makes sure the script doesnt reset before escaping.
-        task.wait(1)
-        State.Escaped = false
+        if not State.Escaped then
+            State.EscapeSerial = State.EscapeSerial + 1
+            State.Escaped = true
+            task.delay(1, function()
+                State.Escaped = false
+            end)
+        end
     end
 end))
 
@@ -599,6 +637,16 @@ task.spawn(function()
         if State.AutoJoinLift and (State.AutoFarm or State.AutoPlay or State.SelectTASMaps) and not State.CurrentlyFarming and not (State.PracticeMap and State.PracticeMap.Parent) then
             if not Check("InLift") and not Check("InGame") then
                 AddedWaiting:FireServer()
+                pcall(function()
+                    local waitTeleport = Workspace:FindFirstChild("Lobby")
+                        and Workspace.Lobby:FindFirstChild("WaitingArea")
+                        and Workspace.Lobby.WaitingArea:FindFirstChild("WaitTeleport")
+                    local char = LocalPlayer.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    if waitTeleport and root and not Check("InLift") then
+                        root.CFrame = waitTeleport.CFrame
+                    end
+                end)
             end
         end
     end
@@ -688,6 +736,15 @@ TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
         char:WaitForChild("HumanoidRootPart", 10)
         task.wait(0.5)
         AddedWaiting:FireServer()
+        pcall(function()
+            local waitTeleport = Workspace:FindFirstChild("Lobby")
+                and Workspace.Lobby:FindFirstChild("WaitingArea")
+                and Workspace.Lobby.WaitingArea:FindFirstChild("WaitTeleport")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if waitTeleport and root then
+                root.CFrame = waitTeleport.CFrame
+            end
+        end)
         State.ResettingForDifficulty = false
     end
 end))
@@ -758,6 +815,7 @@ Session.Cleanup = function()
     pcall(Noclip, false)
     Overrides.restoreAll()
     NativeSwim.destroy()
+    if GameState and GameState.destroy then GameState.destroy() end
     UI.destroy()
 end
 local Interface = Runtime.run("ui/main.luau")({

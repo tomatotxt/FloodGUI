@@ -27,6 +27,7 @@ These scripts require Roblox and executor APIs including local file access and l
 - Each mode remembers its last page during the session. Switching changes presentation without restarting active engines. Detailed tuning, advanced tools and shortcuts expand when needed.
 - Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
 - TAS swim mode and creator auto-swim use the game's native `isSwimming` callback instead of spoofing root-part Position. See [native swimming](docs/NATIVE-SWIMMING.md) for capability requirements and limits.
+- Native round flow (`UpdateGameState`), button progress (`UpdIngameStats`), active goal tracking (`UpdGoalLocator`), and server-confirmed escape results (`Survived`). See [native lifecycle](docs/NATIVE-LIFECYCLE.md).
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.
 - Automatic playback of the 177 bundled legacy JSON recordings and new binary recordings.
 - JSON/binary conversion API and creator conversion/export controls.
