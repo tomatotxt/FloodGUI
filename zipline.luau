@@ -534,12 +534,12 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 
 	function api.step(dt)
 		if not activeRope or not localPlayer then
-			return
+			return false
 		end
 		local char = localPlayer.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
 		if not root then
-			return
+			return false
 		end
 		local length = activeRope.length or 100
 		local rate = 1 / (length / (activeSpeed > 0 and activeSpeed or 40))
@@ -554,6 +554,7 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		if currentBodyPos and currentBodyPos.Parent then
 			currentBodyPos.Position = finalCF.Position
 		end
+		return activeProgress >= 1
 	end
 
 	function api.setCanonicalRopes(ropes)
@@ -577,6 +578,7 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		if not root then
 			return
 		end
+		activeProgress = math.clamp(progress or 0, 1, 1)
 		activeProgress = math.clamp(progress or 0, 0, 1)
 		local finalCF, segCF, tilt = evaluate(activeRope, activeProgress, lastSegmentCF, activeSwing)
 		lastSegmentCF = segCF
@@ -584,8 +586,41 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		root.CFrame = finalCF
 		root.Velocity = Vector3.new()
 		root.RotVelocity = Vector3.new()
-		if currentBodyPos and currentBodyPos.Parent then
+		root.Anchored = true
+		isPausedState = true
+
+		if not currentBodyPos and typeof and typeof(Instance) == "table" and Instance.new then
+			pcall(function()
+				currentBodyPos = Instance.new("BodyPosition", root)
+				currentBodyPos.MaxForce = Vector3.new(10000, 10000, 10000)
+				currentBodyPos.P = 10000
+				currentBodyPos.Position = finalCF.Position
+			end)
+		elseif currentBodyPos and currentBodyPos.Parent then
 			currentBodyPos.Position = finalCF.Position
+		end
+
+		local hum = char:FindFirstChild("Humanoid")
+		if hum and hum.Parent then
+			hum.AutoRotate = false
+			pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
+			pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false) end)
+		end
+		local anim = char:FindFirstChild("Animate")
+		if anim and anim:FindFirstChild("Swinging") then
+			pcall(function() anim.Swinging:Fire(true) end)
+		end
+		local sideClip = char:FindFirstChild("CL_AntiSideClip")
+		if sideClip and sideClip:FindFirstChild("Ziplining") then
+			pcall(function() sideClip.Ziplining:Fire(true) end)
+		end
+		local clMain = localPlayer and localPlayer.FindFirstChild and localPlayer:FindFirstChild("PlayerScripts") and localPlayer.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
+		if clMain and clMain:FindFirstChild("ToggleVelocity") then
+			pcall(function() clMain.ToggleVelocity:Fire(false) end)
+		end
+
+		if originalStartZipline and type(writeUpvalue) == "function" then
+			pcall(writeUpvalue, originalStartZipline, 1, true)
 		end
 	end
 
@@ -641,7 +676,7 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		if hum and hum.Parent then
 			hum.AutoRotate = true
 			pcall(function()
-				hum:ChangeState(Enum.HumanoidStateType.Freefall)
+				hum:ChangeState(Enum.HumanoidStateType.Running)
 			end)
 			pcall(function()
 				hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
@@ -663,6 +698,15 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 					sideClip.Ziplining:Fire(false)
 				end)
 			end
+			local clMain = localPlayer and localPlayer.FindFirstChild and localPlayer:FindFirstChild("PlayerScripts") and localPlayer.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
+			if clMain and clMain:FindFirstChild("ToggleVelocity") then
+				pcall(function()
+					clMain.ToggleVelocity:Fire(true)
+				end)
+			end
+		end
+		if originalStartZipline and type(writeUpvalue) == "function" then
+			pcall(writeUpvalue, originalStartZipline, 1, false)
 		end
 	end
 

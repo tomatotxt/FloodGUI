@@ -1077,7 +1077,17 @@ function StepForward()
     StepInProgress = true
     local InitialFrames = #Frames
     if ZiplineAssistant and ZiplineAssistant.isZiplining and ZiplineAssistant.isZiplining() then
-        ZiplineAssistant.step(RECORD_INTERVAL)
+        local finished = ZiplineAssistant.step(RECORD_INTERVAL)
+        table.insert(Frames, CaptureFrameData())
+        local VisualTime = os.clock() - RunStart - TimeOffset + PreviewOffset
+        SyncButtonState(VisualTime, os.clock() - RunStart - TimeOffset)
+        UpdateMapState(VisualTime)
+        task.spawn(function() UpdateTimeDisplay(VisualTime) end)
+        if finished then
+            ZiplineAssistant.cancel()
+        end
+        StepInProgress = false
+        return
     end
     TogglePause()
     RecordAccumulator = RECORD_INTERVAL

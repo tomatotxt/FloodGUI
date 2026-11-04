@@ -695,6 +695,31 @@ if downKey and downKey.Pressed then
     end))
 end
 
+local function StepPlaybackFrame(forward)
+    if not PAUSED or CleanedUp or not RootPart or not RootPart.Parent then return end
+    local stepDelta = (forward and 1 or -1) * (1 / 60)
+    VisualElapsed = math.clamp(VisualElapsed + stepDelta, 0, TAS[#TAS].time)
+    local FA, FB, Alpha, nextFrame = Timeline.sample(TAS, VisualElapsed, OldFrame)
+    OldFrame = nextFrame
+    local cfA = NewC(FA.CCFrame[1], FA.CCFrame[2], FA.CCFrame[3]) * AngC(FA.CCFrame[4], FA.CCFrame[5], FA.CCFrame[6])
+    local cfB = NewC(FB.CCFrame[1], FB.CCFrame[2], FB.CCFrame[3]) * AngC(FB.CCFrame[4], FB.CCFrame[5], FB.CCFrame[6])
+    local TargetCFrame = cfA:Lerp(cfB, Alpha) + Offset
+    PauseCFrame = TargetCFrame
+    RootPart.CFrame = TargetCFrame
+    local AnimData = FA.AAnimation
+    pcall(activateAnimation, AnimData, VisualElapsed)
+end
+
+local rightKey = INPUT["Right"]
+if rightKey and rightKey.Pressed then
+    AddConnection(rightKey.Pressed:Connect(function() StepPlaybackFrame(true) end))
+end
+
+local leftKey = INPUT["Left"]
+if leftKey and leftKey.Pressed then
+    AddConnection(leftKey.Pressed:Connect(function() StepPlaybackFrame(false) end))
+end
+
 local function SetManualZipline(value)
     IsManualZipline, IsCurrentlyZiplining = value, value
     if value then toggleSlide(false); IsSliding = false; IsManualSlide = false end
