@@ -28,7 +28,11 @@ These scripts require Roblox and executor APIs including local file access and l
 - Independent collection, movement tools, map selection and difficulty controls, with both touch toggles and keyboard shortcuts.
 - TAS swim mode and creator auto-swim use the game's native `isSwimming` callback instead of spoofing root-part Position. See [native swimming](docs/NATIVE-SWIMMING.md) for capability requirements and limits.
 - Native round flow (`UpdateGameState`), button progress (`UpdIngameStats`), active goal tracking (`UpdGoalLocator`), and server-confirmed escape results (`Survived`). See [native lifecycle](docs/NATIVE-LIFECYCLE.md).
-- Native zipline assistant (`zipline.luau`) using canonical `UpdRopeData`, FE2's native speed defaults (clamped 20..200), and geometric recovery.
+- Native zipline assistant and controller (`zipline.luau`) using canonical `UpdRopeData`, FE2's native speed defaults (clamped 20..200), math-exact trajectory/tilt evaluation, and geometric recovery.
+- TAS Creator & Player mid-zipline pause and resume: suspends and resumes rope progression without frame drops, state losses, or desync.
+- Frame-rate hitch compensation: accumulator loop drainage eliminates dropped frames during FPS fluctuations.
+- Monotonic timestamps: enforces strictly non-decreasing recording times, preventing micro-jitter and validator rejections.
+- TAS Player physics decoupling: inhibits unmanaged character zipline loops during playback while driving native anti-clip and velocity events.
 - Integrated Community Maps (FE2CM) compatibility and obfuscated rope remote resolution.
 - Standalone entry points: `reach.luau` (targeted map sniper), `tashelper.luau` (one-time manager), and `minigui.luau` (compact farm interface).
 - Binary TAS recording, savestates, rewind/advance, preview, mobile touch controls and local timeline support when available.

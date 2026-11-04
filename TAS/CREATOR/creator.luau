@@ -13,6 +13,8 @@ local Recordings = Runtime.run("TAS/recordings.luau")(Runtime)
 local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
 local Buffer = Runtime.run("TAS/CREATOR/recording-buffer.luau")
 local Environment = Runtime.run("TAS/CREATOR/environment.luau")
+local ZiplineModule = Runtime.run("zipline.luau")
+local ZiplineAssistant = ZiplineModule(LocalPlayer, game:GetService("ReplicatedStorage"):FindFirstChild("Remote"), AddConnection)
 local CharacterOverrides = Runtime.run("overrides.luau")()
 Own(CharacterOverrides.restoreAll)
 local UI_API_PATH = "ui/creator.luau"
@@ -278,9 +280,13 @@ local function GetPlayerCFrame()
     return CFrame.new(x - MapX, y - MapY + 1000, z - MapZ, R00, R01, R02, R10, R11, R12, R20, R21, R22)
 end
 
+local LastRecordedTime = 0
 local function CaptureFrameData()
+    local rawTime = os.clock() - RunStart - TimeOffset
+    local frameTime = math.max(LastRecordedTime, rawTime)
+    LastRecordedTime = frameTime
     return PackFrame(
-        os.clock() - RunStart - TimeOffset,
+        frameTime,
         LocalPlayer.Character.HumanoidRootPart.Velocity,
         GetPlayerCFrame(),
         workspace.CurrentCamera.CFrame,
@@ -660,10 +666,12 @@ function TogglePause()
         IsPaused = not IsPaused
         if IsPaused then
             SavedVelocity = Root.Velocity; Root.Anchored = true; PauseStart = os.clock()
+            if ZiplineAssistant and ZiplineAssistant.setPaused then ZiplineAssistant.setPaused(true) end
             if StatusLabel then StatusLabel.Text = "PAUSED"; StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 80) end
             SendAlert("Paused", Color3.fromRGB(255, 255, 0))
         else
             Root.Anchored = false; Root.Velocity = SavedVelocity; TimeOffset = TimeOffset + os.clock() - (PauseStart or os.clock())
+            if ZiplineAssistant and ZiplineAssistant.setPaused then ZiplineAssistant.setPaused(false) end
             if StatusLabel then StatusLabel.Text = "PLAYING"; StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255) end
             RecordAccumulator = 0
             SendAlert("Unpaused", Color3.fromRGB(0, 255, 0))
@@ -685,6 +693,13 @@ function LoadLastSavestate()
 
         workspace.CurrentCamera.CFrame = Frame.CameraCFrame
         PauseStart = os.clock(); RunStart = os.clock() - Frame.Time; TimeOffset = 0
+        LastRecordedTime = Frame.Time
+        local isSwing = Frame.Animation and (Frame.Animation[1] == "swing" or Frame.Animation[1] == "zipline")
+        if isSwing and ZiplineAssistant and ZiplineAssistant.seekPosition then
+            ZiplineAssistant.seekPosition(Frame.CFrame.Position + Vector3.new(MapX, MapY - 1000, MapZ))
+        elseif not isSwing and ZiplineAssistant and ZiplineAssistant.isZiplining and ZiplineAssistant.isZiplining() then
+            ZiplineAssistant.cancel()
+        end
 
         SyncButtonState(Frame.Time, Frame.Time); UpdateMapState(Frame.Time)
 
@@ -891,7 +906,13 @@ local function SetupMap()
 
     local FE2Env = getsenv(Char:WaitForChild("FE2_Character"))
     local startZipline = FE2Env.startZipline
+    if ZiplineAssistant and ZiplineAssistant.attach then
+        ZiplineAssistant.attach(Char)
+    end
     if RopeTable and #RopeTable >= 1 then
+        if ZiplineAssistant and ZiplineAssistant.setCanonicalRopes then
+            ZiplineAssistant.setCanonicalRopes(RopeTable)
+        end
         SendAlert("Zipline Data Restored", Color3.fromRGB(0, 255, 255))
         task.spawn(function()
             while not Stopped and Char and Char.Parent and Char.Humanoid.Health >= 1 do
@@ -1055,6 +1076,9 @@ function StepForward()
     if Stopped or StepInProgress or IsViewingTAS or not IsPaused or not RunStart then return end
     StepInProgress = true
     local InitialFrames = #Frames
+    if ZiplineAssistant and ZiplineAssistant.isZiplining and ZiplineAssistant.isZiplining() then
+        ZiplineAssistant.step(RECORD_INTERVAL)
+    end
     TogglePause()
     RecordAccumulator = RECORD_INTERVAL
     local deadline = os.clock() + 2
@@ -1091,6 +1115,13 @@ function RewindFrame()
             Root.Velocity = Frame.Velocity; SavedVelocity = Frame.Velocity
             workspace.CurrentCamera.CFrame = Frame.CameraCFrame
             PauseStart = os.clock(); RunStart = os.clock() - Frame.Time; TimeOffset = 0
+            LastRecordedTime = Frame.Time
+            local isRewindSwing = Frame.Animation and (Frame.Animation[1] == "swing" or Frame.Animation[1] == "zipline")
+            if isRewindSwing and ZiplineAssistant and ZiplineAssistant.seekPosition then
+                ZiplineAssistant.seekPosition(Frame.CFrame.Position + Vector3.new(MapX, MapY - 1000, MapZ))
+            elseif not isRewindSwing and ZiplineAssistant and ZiplineAssistant.isZiplining and ZiplineAssistant.isZiplining() then
+                ZiplineAssistant.cancel()
+            end
 
             local VisualTime = Frame.Time + PreviewOffset
             SyncButtonState(VisualTime, Frame.Time); UpdateMapState(VisualTime)
@@ -1398,10 +1429,15 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
 
     if not IsPaused then
         RecordAccumulator = RecordAccumulator + dt
-        if RecordAccumulator >= RECORD_INTERVAL then
+        local maxDrain = StepInProgress and 1 or 5
+        local drained = 0
+        while RecordAccumulator >= RECORD_INTERVAL and drained < maxDrain and #Frames < 2000000 do
             RecordAccumulator = RecordAccumulator - RECORD_INTERVAL
-            if RecordAccumulator > RECORD_INTERVAL then RecordAccumulator = 0 end
             table.insert(Frames, CaptureFrameData())
+            drained = drained + 1
+        end
+        if RecordAccumulator > RECORD_INTERVAL * 2 then
+            RecordAccumulator = RECORD_INTERVAL
         end
         if os.clock() - LastHeartbeat >= 2 then LastHeartbeat = os.clock() end
 

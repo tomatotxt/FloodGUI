@@ -158,11 +158,71 @@ local geomPath, geomDist = zip.reconstructRopeGeometry(mockRopeModel)
 assert(geomPath ~= nil and #geomPath > 1, "Expected reconstructed geometry path")
 assert(geomDist > 15, "Expected positive length")
 
--- 5. Test API lifecycle
+-- 5. Test calculateProgress and evaluate mathematics
+local testRope = {
+	positions = { Vector3.new(0, 0, 0), Vector3.new(50, 0, 0), Vector3.new(100, 0, 0) },
+	length = 100,
+	speed = 50,
+}
+local prog0, d0 = zip.calculateProgress(testRope, Vector3.new(0, 0, 0))
+assert(prog0 == 0 and d0 == 0, "Progress at start should be 0")
+local progMid, dMid = zip.calculateProgress(testRope, Vector3.new(50, 0, 0))
+assert(math.abs(progMid - 0.5) < 0.001 and dMid == 0, "Progress at middle should be 0.5")
+local progEnd, dEnd = zip.calculateProgress(testRope, Vector3.new(100, 0, 0))
+assert(math.abs(progEnd - 1.0) < 0.001 and dEnd == 0, "Progress at end should be 1.0")
+
+local evalCF0, segCF0, tilt0 = zip.evaluate(testRope, 0)
+assert(evalCF0 ~= nil and segCF0 ~= nil and type(tilt0) == "number", "Expected valid evaluation at 0")
+local evalCFMid = zip.evaluate(testRope, 0.5)
+assert(evalCFMid ~= nil, "Expected valid evaluation at midpoint")
+
+-- 6. Test mid-zipline pause, step, and seek controls
+local mockHRP = {
+	Position = Vector3.new(0, 0, 0),
+	CFrame = CFrame.new(0, 0, 0),
+	Velocity = Vector3.new(10, 0, 0),
+	RotVelocity = Vector3.new(0, 0, 0),
+	Anchored = false,
+}
+local mockHumanoid = {
+	AutoRotate = true,
+	Parent = true,
+	ChangeState = function() end,
+	SetStateEnabled = function() end,
+}
+local mockChar = {
+	HumanoidRootPart = mockHRP,
+	Humanoid = mockHumanoid,
+	FindFirstChild = function(_, name)
+		if name == "HumanoidRootPart" then return mockHRP end
+		if name == "Humanoid" then return mockHumanoid end
+		return nil
+	end,
+}
+mockPlayer.Character = mockChar
+
+assert(not zip.isPaused(), "Should not be paused initially")
+zip.pause()
+assert(zip.isPaused(), "Should be paused after pause()")
+zip.resume()
+assert(not zip.isPaused(), "Should not be paused after resume()")
+
+zip.setCanonicalRopes({ testRope })
+zip.seekPosition(Vector3.new(50, 0, 0))
+assert(zip.isZiplining(), "Should be ziplining after seekPosition near rope")
+zip.pause()
+assert(mockHRP.Anchored, "HumanoidRootPart should be anchored when paused mid-zipline")
+zip.step(1 / 60)
+zip.resume()
+assert(not mockHRP.Anchored, "HumanoidRootPart should be unanchored when resumed")
+zip.cancel()
+assert(not zip.isZiplining(), "Should not be ziplining after cancel")
+
+-- 7. Test API lifecycle
 assert(not zip.isEnabled(), "Should be disabled by default")
 zip.setEnabled(true)
 assert(zip.isEnabled(), "Should be enabled after setEnabled(true)")
-zip.check() -- Calling when character is nil should not crash
+zip.check()
 zip.destroy()
 assert(not zip.isEnabled(), "Should be disabled after destroy")
 

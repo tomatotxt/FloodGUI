@@ -17,8 +17,17 @@ All 20 source scripts were reviewed. Originals remain in the separate local work
 | TAS Editor, TAS Record Voiz, Beta-Creator | Older recording/rewind/savestate/export implementations are superseded by the integrated creator. |
 | TAS Player + backup variant | Superseded by the shared current player with JSON/binary support. |
 | CREATOR/fe2cm.luau | Integrated into creator.luau: added Community Maps obfuscated rope remote alias oBoPcLGDkNQjGAPHvlWujHyuqmatLeGx, unanchoring on scan completion, and CM respawn handling. |
-| ZiplineFix | Ported as native zipline assistant (zipline.luau): respects native 40 default RopeSpeed clamped to 20..200, uses canonical UpdRopeData before visual reconstruction, and hooks RopeStart proximity cleanly. |
+| ZiplineFix | Ported as native zipline assistant (zipline.luau): respects native 40 default RopeSpeed clamped to 20..200, uses canonical UpdRopeData before visual reconstruction, and hooks RopeStart proximity cleanly. Upgraded with full Zipline Controller supporting mid-zipline pause, resume, single-frame advance, and geometric seek. |
 | reach, tashelper, minigui | Ported as standalone entry points (reach.luau, tashelper.luau, minigui.luau) powered by FloodGUI's runtime and native lifecycle. |
+
+## TAS Creator & Player FE2 Interconnections
+
+- **Mid-Zipline Pause & Resume:** Hooks `FE2_Character.startZipline` to suspend progression along ropes when paused, keeping `HumanoidRootPart` anchored and oriented without letting FE2's `RenderStepped` loop advance or terminate the zipline in the background. Resuming continues seamlessly along the rope.
+- **Accurate Mathematical Model:** Uses pure curve projection (`calculateProgress`) and pose evaluation (`evaluate`) matching FE2 client internals (`55953_FE2_Character.LocalScript.luau` lines 923-956), computing segment lerps and swing tilt angles deterministically.
+- **Frame-Accurate Advance:** `StepForward()` advances ziplines by exact `RECORD_INTERVAL` slices, capturing each frame without desync.
+- **No Lost Frames on Hitch/Lag:** The frame recording loop drains accumulated intervals (`while RecordAccumulator >= RECORD_INTERVAL`), preventing lost frames during momentary frame-rate drops while clamping lag debt.
+- **Monotonic Timestamps:** Enforces non-decreasing timestamps in `CaptureFrameData()` (`math.max(LastRecordedTime, curTime)`), eliminating micro-jitter and preventing recording validation rejections.
+- **TAS Player Physics Decoupling:** Inhibits unmanaged `FE2_Character.startZipline` during playback to prevent competing `BodyPosition` forces from fighting TAS interpolation, while signaling FE2 client/server subsystems (`RideZipline:FireServer`, `CL_AntiSideClip.Ziplining:Fire`, `CL_MAIN_GameScript.ToggleVelocity:Fire`).
 
 ## Capability checks
 

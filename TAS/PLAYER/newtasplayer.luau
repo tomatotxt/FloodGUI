@@ -289,6 +289,12 @@ local function Cleanup(resetCharacter)
         pcall(toggleSlide, false)
     end
     PhysicalOverrides.restoreAll()
+    if OriginalStartZipline and LP.Character and LP.Character:FindFirstChild("FE2_Character") and type(getsenv) == "function" then
+        pcall(function()
+            local env = getsenv(LP.Character.FE2_Character)
+            if env then env.startZipline = OriginalStartZipline end
+        end)
+    end
     if PlaybackHumanoid and PlaybackHumanoid.Parent and OriginalAutoRotate ~= nil then
         PlaybackHumanoid.AutoRotate = OriginalAutoRotate
     end
@@ -464,10 +470,22 @@ while (RootPart.Anchored == true) or (Humanoid.WalkSpeed <= 0) do
     task.wait()
 end
 
+local OriginalStartZipline = nil
 if LP.Character and LP.Character:FindFirstChild("Humanoid") then
     PlaybackHumanoid = LP.Character.Humanoid
     OriginalAutoRotate = PlaybackHumanoid.AutoRotate
     LP.Character.Humanoid.AutoRotate = false
+
+    local fe2Char = LP.Character:FindFirstChild("FE2_Character")
+    if fe2Char and type(getsenv) == "function" then
+        pcall(function()
+            local env = getsenv(fe2Char)
+            if env and type(env.startZipline) == "function" then
+                OriginalStartZipline = env.startZipline
+                env.startZipline = function() end
+            end
+        end)
+    end
 end
 
 Animate.playAnimation = function() end
@@ -507,6 +525,18 @@ local function activateAnimation(AnimData, Elapsed)
     if n == "zipline" or n == "swing" then
         n = "swing" -- Normalise animation name to FE2's "swing"
         IsCurrentlyZiplining = true
+        if character:FindFirstChild("CL_AntiSideClip") and character.CL_AntiSideClip:FindFirstChild("Ziplining") then
+            pcall(function() character.CL_AntiSideClip.Ziplining:Fire(true) end)
+        end
+        local clMain = LP.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
+        if clMain and clMain:FindFirstChild("ToggleVelocity") then
+            pcall(function() clMain.ToggleVelocity:Fire(false) end)
+        end
+        local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remote")
+        if remotes then
+            local ride = remotes:FindFirstChild("RideZipline")
+            if ride then pcall(function() ride:FireServer() end) end
+        end
         if IsSliding then
             toggleSlide(false)
             IsSliding = false
@@ -516,6 +546,15 @@ local function activateAnimation(AnimData, Elapsed)
 
     -- Exit zipline state strictly when landing on solid ground (unless manual zipline key held)
     if humanoid.FloorMaterial ~= Enum.Material.Air and not IsManualZipline then
+        if IsCurrentlyZiplining then
+            if character:FindFirstChild("CL_AntiSideClip") and character.CL_AntiSideClip:FindFirstChild("Ziplining") then
+                pcall(function() character.CL_AntiSideClip.Ziplining:Fire(false) end)
+            end
+            local clMain = LP.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
+            if clMain and clMain:FindFirstChild("ToggleVelocity") then
+                pcall(function() clMain.ToggleVelocity:Fire(true) end)
+            end
+        end
         IsCurrentlyZiplining = false
     end
 
@@ -685,8 +724,10 @@ local function TriggerPauseToggle(requested)
     PAUSED = desired
     if PAUSED then
         PauseCFrame = RootPart.CFrame
-        pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
-        LastPlayedAnim = "idle"
+        if not (IsCurrentlyZiplining or (LastPlayedAnim == "swing") or IsCurrentlySwimming) then
+            pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
+            LastPlayedAnim = "idle"
+        end
         Log("TAS paused", "Warning")
     else
         PauseCFrame = nil
