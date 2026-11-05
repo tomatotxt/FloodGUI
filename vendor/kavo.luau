@@ -21,29 +21,29 @@ function Kavo:DraggingEnabled(frame, parent, Connect)
     local dragging = false
     local dragInput, mousePos, framePos
 
-    Connect(frame.InputBegan, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    Connect(frame.InputBegan, function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            mousePos = input.Position
+            mousePos = inputObj.Position
             framePos = parent.Position
             
-            Connect(input.Changed, function()
-                if input.UserInputState == Enum.UserInputState.End then
+            Connect(inputObj.Changed, function()
+                if inputObj.UserInputState == Enum.UserInputState.End then
                     dragging = false
                 end
             end)
         end
     end)
 
-    Connect(frame.InputChanged, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
+    Connect(frame.InputChanged, function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch then
+            dragInput = inputObj
         end
     end)
 
-    Connect(input.InputChanged, function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - mousePos
+    Connect(input.InputChanged, function(inputObj)
+        if inputObj == dragInput and dragging then
+            local delta = inputObj.Position - mousePos
             parent.Position  = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
         end
     end)
@@ -258,8 +258,15 @@ function Kavo.CreateLib(kavName, themeList, options)
     floatingToggle.Position = UDim2.new(0, 20, 0.5, -22)
     floatingToggle.Visible = false
     floatingToggle.ZIndex = 999
+    floatingToggle.Active = true
     RegisterTheme(floatingToggle, "BackgroundColor3", "Header")
     Instance.new("UICorner", floatingToggle).CornerRadius = UDim.new(1, 0)
+
+    local toggleStroke = Instance.new("UIStroke", floatingToggle)
+    toggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    toggleStroke.Thickness = 1.5
+    toggleStroke.Transparency = 0.3
+    RegisterTheme(toggleStroke, "Color", "SchemeColor")
     
     -- Procedurally Generated 3-Dot (Kebab) Icon
     local dotLayout = Instance.new("UIListLayout", floatingToggle)
@@ -270,36 +277,77 @@ function Kavo.CreateLib(kavName, themeList, options)
     for i = 1, 3 do
         local dot = Instance.new("Frame", floatingToggle)
         dot.Size = UDim2.new(0, 5, 0, 5)
+        dot.Active = false
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
         RegisterTheme(dot, "BackgroundColor3", "SchemeColor")
     end
 
-    Kavo:DraggingEnabled(floatingToggle, floatingToggle, Connect)
+    -- Full-coverage interactive button to reliably capture clicks/taps across platforms
+    local floatingClick = Instance.new("TextButton", floatingToggle)
+    floatingClick.Name = "FloatingClick"
+    floatingClick.Size = UDim2.new(1, 0, 1, 0)
+    floatingClick.BackgroundTransparency = 1
+    floatingClick.Text = ""
+    floatingClick.ZIndex = 1000
+    floatingClick.Active = true
+
+    Kavo:DraggingEnabled(floatingClick, floatingToggle, Connect)
 
     -- Toggle Minimize/Restore Logic
     local savedPos = UDim2.new(0.336, 0, 0.275, 0)
+
+    local function restoreWindow()
+        Tabs:Toggle(true)
+    end
 
     Connect(minimize.MouseButton1Click, function() Tabs:Toggle(false) end)
 
     -- Click vs Drag check for the floating button
     local startPos
-    Connect(floatingToggle.InputBegan, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            startPos = input.Position
+    local hasMoved = false
+    Connect(floatingClick.InputBegan, function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
+            startPos = inputObj.Position
+            hasMoved = false
+        end
+    end)
+
+    Connect(floatingClick.InputChanged, function(inputObj)
+        if (inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch) and startPos then
+            if (inputObj.Position - startPos).Magnitude >= 8 then
+                hasMoved = true
+            end
         end
     end)
     
-    Connect(floatingToggle.InputEnded, function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    Connect(floatingClick.InputEnded, function(inputObj)
+        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
             if startPos then
-                local endPos = input.Position
+                local endPos = inputObj.Position
+                local dist = (startPos - endPos).Magnitude
+                startPos = nil
                 -- Magnitude check ensures dragging doesn't trigger a click
-                if (startPos - endPos).Magnitude < 10 then 
-                    Tabs:Toggle(true)
+                if not hasMoved and dist < 8 then 
+                    restoreWindow()
                 end
             end
         end
     end)
+
+    if floatingClick.Activated then
+        Connect(floatingClick.Activated, function()
+            if not hasMoved then
+                restoreWindow()
+            end
+        end)
+    end
+    if floatingClick.MouseButton1Click then
+        Connect(floatingClick.MouseButton1Click, function()
+            if not hasMoved then
+                restoreWindow()
+            end
+        end)
+    end
 
     local MainSide = Instance.new("Frame", Main)
     MainSide.Position = UDim2.new(0, 0, 0.091, 0)
