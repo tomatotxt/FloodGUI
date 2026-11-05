@@ -271,14 +271,22 @@ function Kavo.CreateLib(kavName, themeList, options)
     toggleStroke.ZIndex = 100000
     RegisterTheme(toggleStroke, "Color", "SchemeColor")
     
-    -- Procedurally Generated 3-Dot (Kebab) Icon
-    local dotLayout = Instance.new("UIListLayout", floatingToggle)
+    -- Procedurally Generated 3-Dot (Kebab) Icon Container (isolated from floatingClick so UIListLayout centers cleanly)
+    local dotContainer = Instance.new("Frame", floatingToggle)
+    dotContainer.Name = "DotContainer"
+    dotContainer.Size = UDim2.new(1, 0, 1, 0)
+    dotContainer.Position = UDim2.new(0, 0, 0, 0)
+    dotContainer.BackgroundTransparency = 1
+    dotContainer.Active = false
+    dotContainer.ZIndex = 100001
+
+    local dotLayout = Instance.new("UIListLayout", dotContainer)
     dotLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     dotLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     dotLayout.Padding = UDim.new(0, 4)
 
     for i = 1, 3 do
-        local dot = Instance.new("Frame", floatingToggle)
+        local dot = Instance.new("Frame", dotContainer)
         dot.Size = UDim2.new(0, 5, 0, 5)
         dot.Active = false
         dot.ZIndex = 100001
@@ -290,6 +298,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     local floatingClick = Instance.new("TextButton", floatingToggle)
     floatingClick.Name = "FloatingClick"
     floatingClick.Size = UDim2.new(1, 0, 1, 0)
+    floatingClick.Position = UDim2.new(0, 0, 0, 0)
     floatingClick.BackgroundTransparency = 1
     floatingClick.Text = ""
     floatingClick.ZIndex = 100002
