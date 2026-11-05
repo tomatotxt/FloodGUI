@@ -13,7 +13,7 @@ end
 function Library:Window(options)
     local theme={SchemeColor=self.Theme.Accent,Background=self.Theme.Background,
         Header=self.Theme.Header,TextColor=self.Theme.Text,ElementColor=self.Theme.Surface}
-    local native=Kavo.CreateLib(options.Title,theme,{Parent=options.Parent,Name=options.Name})
+    local native=Kavo.CreateLib(options.Title,theme,{Parent=options.Parent,Name=options.Name,DisplayOrder=options.DisplayOrder})
     local window={Gui=native.Gui,Root=native.Root,OpenButton=native.OpenButton,Open=true,
         _destroyed=false,_listeners={},_native=native,_key=options.Keybind,_tabs={},_toasts={}}
     local input=game:GetService("UserInputService")

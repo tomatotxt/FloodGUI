@@ -202,9 +202,11 @@ function Kavo.CreateLib(kavName, themeList, options)
         if v:IsA("ScreenGui") and v.Name == (options.Name or kavName) then v:Destroy() end
     end
 
+    local defaultDisplayOrder = options.DisplayOrder or 999999
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = options.Name or kavName
     ScreenGui.Parent = options.Parent or players.LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.DisplayOrder = defaultDisplayOrder
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.ResetOnSpawn = false
 
@@ -257,7 +259,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     floatingToggle.Size = UDim2.new(0, 45, 0, 45)
     floatingToggle.Position = UDim2.new(0, 20, 0.5, -22)
     floatingToggle.Visible = false
-    floatingToggle.ZIndex = 999
+    floatingToggle.ZIndex = 100000
     floatingToggle.Active = true
     RegisterTheme(floatingToggle, "BackgroundColor3", "Header")
     Instance.new("UICorner", floatingToggle).CornerRadius = UDim.new(1, 0)
@@ -266,6 +268,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     toggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     toggleStroke.Thickness = 1.5
     toggleStroke.Transparency = 0.3
+    toggleStroke.ZIndex = 100000
     RegisterTheme(toggleStroke, "Color", "SchemeColor")
     
     -- Procedurally Generated 3-Dot (Kebab) Icon
@@ -278,6 +281,7 @@ function Kavo.CreateLib(kavName, themeList, options)
         local dot = Instance.new("Frame", floatingToggle)
         dot.Size = UDim2.new(0, 5, 0, 5)
         dot.Active = false
+        dot.ZIndex = 100001
         Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
         RegisterTheme(dot, "BackgroundColor3", "SchemeColor")
     end
@@ -288,7 +292,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     floatingClick.Size = UDim2.new(1, 0, 1, 0)
     floatingClick.BackgroundTransparency = 1
     floatingClick.Text = ""
-    floatingClick.ZIndex = 1000
+    floatingClick.ZIndex = 100002
     floatingClick.Active = true
 
     Kavo:DraggingEnabled(floatingClick, floatingToggle, Connect)
@@ -1288,6 +1292,7 @@ function Kavo.CreateLib(kavName, themeList, options)
         end
         Main.Visible=open
         floatingToggle.Visible=not open
+        ScreenGui.DisplayOrder = open and defaultDisplayOrder or 2147483647
     end
     function Tabs:Destroy()
         if self._destroyed then return end
