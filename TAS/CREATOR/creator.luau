@@ -145,7 +145,7 @@ local AutoResetEnv = false
 local ClonedMap
 local RopeTable
 local MapX, MapY, MapZ
-local MapCapture, LightingCapture
+local MapCapture, LightingCapture, TimelineEngine
 local LastMapTime = 0
 
 -- Button Order Tracking
@@ -578,6 +578,7 @@ local function UpdateMapState(TargetTime)
     if EnvPaused then return end
     if MapCapture then MapCapture.seek(TargetTime) end
     if LightingCapture then LightingCapture.seek(TargetTime) end
+    if TimelineEngine and TimelineEngine.seek then TimelineEngine.seek(TargetTime) end
     LastMapTime = TargetTime
 end
 
@@ -662,6 +663,7 @@ function ResetToNormal()
     Connections = {}
     if MapCapture then MapCapture.dispose(); MapCapture = nil end
     if LightingCapture then LightingCapture.dispose(); LightingCapture = nil end
+    if TimelineEngine and TimelineEngine.dispose then TimelineEngine.dispose(); TimelineEngine = nil end
 
     -- Restore original animation engine
     if AnimEnv then
@@ -1134,11 +1136,15 @@ local function SetupMap()
         end
     end
     local timelines = Runtime.run("TAS/CREATOR/timelines.luau")
-    local ok, supported, reason = pcall(timelines.bind, ClonedMap, LocalPlayer, AddConnection,
+    local ok, supported, playerOrReason = pcall(timelines.bind, ClonedMap, LocalPlayer, AddConnection,
         function(message) SendAlert(message, Color3.fromRGB(255, 170, 0)) end,
         function() return getgenv().TAS_Active == true end)
-    if not ok or not supported then
-        local message = "DISABLED: Local timelines — " .. tostring(ok and reason or supported)
+    if ok and supported then
+        TimelineEngine = playerOrReason
+        SendAlert("Local Timelines active and synchronized", Color3.fromRGB(0, 255, 0))
+        if MapEventLabel then MapEventLabel.Text = "Timelines: Active and Synced" end
+    else
+        local message = "DISABLED: Local timelines — " .. tostring(ok and playerOrReason or supported)
         SendAlert(message, Color3.fromRGB(255, 170, 0))
         if MapEventLabel then MapEventLabel.Text = message end
     end
@@ -1336,6 +1342,7 @@ function PlaybackTAS(Data, metadata)
         pcall(function() if Cam.Parent and workspace.CurrentCamera == Cam then Cam.CFrame = returnCamera end end)
         pcall(function() if MapCapture then MapCapture.seek(returnMapTime) end end)
         pcall(function() if LightingCapture then LightingCapture.seek(returnMapTime) end end)
+        pcall(function() if TimelineEngine and TimelineEngine.seek then TimelineEngine.seek(returnMapTime) end end)
         LastMapTime = returnMapTime
         for part, snapshot in pairs(buttonState) do
             local data = ButtonRegistry[part]
