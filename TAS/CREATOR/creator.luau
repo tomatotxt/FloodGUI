@@ -160,6 +160,7 @@ local LightingCaptured = false
 local RecordAccumulator = 0
 local TARGET_FPS = 60
 local RECORD_INTERVAL = 1 / TARGET_FPS
+local LiftCheckPos = Vector3.new(-25, -144, 139)
 
 -- Auto-Swim
 getgenv().IsSwimming = false
@@ -1498,14 +1499,77 @@ task.spawn(function()
 end)
 
 local multiplayer = game.Workspace.Multiplayer
-repeat task.wait(0.1) until Stopped or multiplayer:FindFirstChild("NewMap") or multiplayer:FindFirstChild("Map")
-repeat task.wait(0.1) until Stopped or multiplayer:FindFirstChild("Map")
-repeat
-    task.wait()
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-until Stopped or (root and not root.Anchored)
-if Stopped then return end
+
+-- Lift and Round lifecycle synchronization:
+-- If player executes inside the lift or lobby, wait for the actual round transition.
+local function WaitForLiveRound()
+    while not Stopped and getgenv().TAS_Active do
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root then
+            task.wait(0.2)
+            continue
+        end
+
+        local distToLift = (root.Position - LiftCheckPos).Magnitude
+        local inLiftOrLobby = (distToLift <= 45) or (root.Position.Y > -160 and root.Position.Y < -130 and distToLift < 200)
+
+        if inLiftOrLobby then
+            -- We are in the lobby/lift. Any current Map in Multiplayer is leftover/stale.
+            local staleMap = multiplayer:FindFirstChild("Map")
+            if staleMap then
+                -- Wait until previous map is cleared or NewMap is being loaded
+                repeat
+                    task.wait(0.2)
+                    character = LocalPlayer.Character
+                    root = character and character:FindFirstChild("HumanoidRootPart")
+                until Stopped or not getgenv().TAS_Active or not staleMap.Parent or multiplayer:FindFirstChild("NewMap")
+            end
+
+            -- Now wait until player is teleported to the map (>800 studs away) or lift starts
+            repeat
+                task.wait(0.2)
+                character = LocalPlayer.Character
+                root = character and character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    distToLift = (root.Position - LiftCheckPos).Magnitude
+                end
+            until Stopped or not getgenv().TAS_Active or (root and distToLift > 80)
+        end
+
+        -- Wait for Map instance in Multiplayer
+        local liveMap = multiplayer:FindFirstChild("Map")
+        if not liveMap then
+            repeat
+                task.wait(0.1)
+                liveMap = multiplayer:FindFirstChild("Map")
+            until Stopped or not getgenv().TAS_Active or liveMap
+        end
+
+        if Stopped or not getgenv().TAS_Active then return false end
+
+        -- Verify map has loaded settings and player is spawned/unanchored in the map
+        local settings = liveMap and liveMap:WaitForChild("Settings", 10)
+        if liveMap and settings then
+            local deadline = os.clock() + 15
+            repeat
+                task.wait(0.1)
+                character = LocalPlayer.Character
+                root = character and character:FindFirstChild("HumanoidRootPart")
+            until Stopped or not getgenv().TAS_Active or (root and not root.Anchored and (root.Position - LiftCheckPos).Magnitude > 80) or os.clock() >= deadline
+
+            if root and not root.Anchored and (root.Position - LiftCheckPos).Magnitude > 80 then
+                return true
+            end
+        end
+        task.wait(0.5)
+    end
+    return false
+end
+
+local roundReady = WaitForLiveRound()
+if not roundReady or Stopped or not getgenv().TAS_Active then return end
+
 local setupOK, setupError = pcall(SetupMap)
 if not setupOK then
     SendAlert("Creator setup failed: " .. tostring(setupError), Color3.fromRGB(255,106,96))
