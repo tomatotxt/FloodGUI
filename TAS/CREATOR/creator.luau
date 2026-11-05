@@ -76,15 +76,17 @@ SetupAlerts()
 if not IsLaunchCurrent() then return end
 
 local function SendAlert(msg, color)
+    local text = tostring(msg)
+    print("[FloodGUI Creator]: " .. text)
     if NewAlert then
-        Compat.gameAlert(NewAlert, msg, color, 1.5, nil)
+        Compat.gameAlert(NewAlert, text, color, 1.5, nil)
     else
         local GameScript = LocalPlayer.PlayerScripts:FindFirstChild("CL_MAIN_GameScript")
         if GameScript then
             local s, e = pcall(getsenv, GameScript)
             if s and type(e) == "table" and type(e.newAlert) == "function" then
                 NewAlert = e.newAlert
-                Compat.gameAlert(NewAlert, msg, color, 1.5, nil)
+                Compat.gameAlert(NewAlert, text, color, 1.5, nil)
             end
         end
     end
