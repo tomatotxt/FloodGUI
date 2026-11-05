@@ -842,4 +842,8 @@ local Interface = Runtime.run("ui/main.luau")({
     end,
 })
 getgenv().FloodGUIInterface = Interface
+local Integrity = Runtime.run("integrity.luau")
+pcall(function()
+    Integrity.check(Runtime, HttpService, Alert)
+end)
 Alert("FloodGUI is ready.", "Success")
