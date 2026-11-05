@@ -608,6 +608,7 @@ local function SyncButtonState(VisualTime, RealTime)
     end
 end
 
+local OriginalSetAnimSpeed
 local function HookAnimations()
     repeat
         if Stopped or not IsLaunchCurrent() then return end
@@ -621,10 +622,19 @@ local function HookAnimations()
     until AnimEnv.playAnimation ~= nil
     if Stopped or not IsLaunchCurrent() then return end
     OriginalPlayAnim = AnimEnv.playAnimation
+    OriginalSetAnimSpeed = AnimEnv.setAnimationSpeed
     AnimEnv.playAnimation = function(anim, speed)
         if not IsPaused then
             CurrentAnim = {anim, speed}
             OriginalPlayAnim(CurrentAnim[1], CurrentAnim[2], LocalPlayer.Character.Humanoid)
+        end
+    end
+    if type(OriginalSetAnimSpeed) == "function" then
+        AnimEnv.setAnimationSpeed = function(speed)
+            if not IsPaused and CurrentAnim and CurrentAnim[1] then
+                CurrentAnim = {CurrentAnim[1], speed}
+            end
+            OriginalSetAnimSpeed(speed)
         end
     end
 end
@@ -653,10 +663,13 @@ function ResetToNormal()
     if LightingCapture then LightingCapture.dispose(); LightingCapture = nil end
 
     -- Restore original animation engine
-    if AnimEnv and OriginalPlayAnim then
-        pcall(function()
-            AnimEnv.playAnimation = OriginalPlayAnim
-        end)
+    if AnimEnv then
+        if OriginalPlayAnim then
+            pcall(function() AnimEnv.playAnimation = OriginalPlayAnim end)
+        end
+        if OriginalSetAnimSpeed then
+            pcall(function() AnimEnv.setAnimationSpeed = OriginalSetAnimSpeed end)
+        end
     end
 
     -- Restore native ambient lighting properties
@@ -715,11 +728,18 @@ function TogglePause()
         if IsPaused then
             SavedVelocity = Root.Velocity; Root.Anchored = true; PauseStart = os.clock()
             if ZiplineAssistant and ZiplineAssistant.setPaused then ZiplineAssistant.setPaused(true) end
+            if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then
+                pcall(function() AnimEnv.setAnimationSpeed(0) end)
+            end
             if StatusLabel then StatusLabel.Text = "PAUSED"; StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 80) end
             SendAlert("Paused", Color3.fromRGB(255, 255, 0))
         else
             Root.Anchored = false; Root.Velocity = SavedVelocity; TimeOffset = TimeOffset + os.clock() - (PauseStart or os.clock())
             if ZiplineAssistant and ZiplineAssistant.setPaused then ZiplineAssistant.setPaused(false) end
+            if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then
+                local resumeSpeed = CurrentAnim and CurrentAnim[2] or (CurrentAnim and CurrentAnim[1] == "walk" and 0.76 or 1)
+                pcall(function() AnimEnv.setAnimationSpeed(resumeSpeed) end)
+            end
             if StatusLabel then StatusLabel.Text = "PLAYING"; StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255) end
             RecordAccumulator = 0
             SendAlert("Unpaused", Color3.fromRGB(0, 255, 0))
@@ -752,7 +772,9 @@ function LoadLastSavestate()
         SyncButtonState(Frame.Time, Frame.Time); UpdateMapState(Frame.Time)
 
         OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid)
-        if Frame.Animation[1] == "walk" then AnimEnv.setAnimationSpeed(0.76) end
+        local animSpd = Frame.Animation[2] or (Frame.Animation[1] == "walk" and 0.76 or 1)
+        if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then AnimEnv.setAnimationSpeed(animSpd) end
+        CurrentAnim = {Frame.Animation[1], animSpd}
 
         ToggleTASSlide(Frame.Sliding == true)
         getgenv().IsSwimming = (Frame.Swimming == true)
@@ -1187,8 +1209,12 @@ function RewindFrame()
             local VisualTime = Frame.Time + PreviewOffset
             SyncButtonState(VisualTime, Frame.Time); UpdateMapState(VisualTime)
 
-            if Frame.Animation[1] then OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid) end
-            if Frame.Animation[1] == "walk" then AnimEnv.setAnimationSpeed(0.76) end
+            if Frame.Animation[1] then
+                OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid)
+                local animSpd = Frame.Animation[2] or (Frame.Animation[1] == "walk" and 0.76 or 1)
+                if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then AnimEnv.setAnimationSpeed(animSpd) end
+                CurrentAnim = {Frame.Animation[1], animSpd}
+            end
 
             ToggleTASSlide(Frame.Sliding == true)
             getgenv().IsSwimming = (Frame.Swimming == true)
@@ -1218,10 +1244,34 @@ local function ToggleTASSlide(val)
 end
 
 local LastTASAnim = nil
-local function ActivateTASAnimation(AnimData)
-    if not AnimData then OriginalPlayAnim("idle", 0.1, LocalPlayer.Character.Humanoid); return end
+local function ActivateTASAnimation(AnimData, frameSliding, frameSwimming)
     if not LocalPlayer.Character then return end
-    local n = AnimData[1]; local animTime = AnimData[2] or 0.1
+    local n = AnimData and AnimData[1] or nil
+    local animTime = AnimData and AnimData[2] or 0.1
+    if not n then OriginalPlayAnim("idle", 0.1, LocalPlayer.Character.Humanoid); return end
+
+    if frameSliding ~= nil then
+        if frameSliding == true then
+            if not IsTASSliding then ToggleTASSlide(true); IsTASSliding = true end
+            n = "slide"
+        else
+            if IsTASSliding then ToggleTASSlide(false); IsTASSliding = false end
+        end
+    else
+        if n == "slide" then
+            if not IsTASSliding then ToggleTASSlide(true); IsTASSliding = true end
+        else
+            if IsTASSliding then ToggleTASSlide(false); IsTASSliding = false end
+        end
+    end
+
+    if frameSwimming ~= nil then
+        if frameSwimming == true then
+            local vel = LocalPlayer.Character.HumanoidRootPart.Velocity
+            n = vel.Magnitude > 1.5 and "swim" or "swimidle"
+        end
+    end
+
     if LocalPlayer.Character.Humanoid:GetState() == Enum.HumanoidStateType.Physics then n = "swing" end
     if n == "idle" then
         local vel = LocalPlayer.Character.HumanoidRootPart.Velocity
@@ -1230,11 +1280,17 @@ local function ActivateTASAnimation(AnimData)
         end
     end
     if n == "fall" and LocalPlayer.Character.HumanoidRootPart.Velocity.Magnitude < 0.1 then n = "swing" end
-    if n == "slide" then if not IsTASSliding then ToggleTASSlide(true); IsTASSliding = true end else if IsTASSliding then ToggleTASSlide(false); IsTASSliding = false end end
     if n and (n == "swing" or n == "zipline" or n ~= LastTASAnim) then
         OriginalPlayAnim(n, animTime, LocalPlayer.Character.Humanoid)
-        if n == "walk" then AnimEnv.setAnimationSpeed(0.76) end
+        local targetSpd = (n == "walk" and 0.76 or animTime)
+        if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then
+            AnimEnv.setAnimationSpeed(targetSpd)
+        end
         LastTASAnim = n
+    elseif n and n == LastTASAnim and n == "walk" and animTime and animTime ~= 0.1 then
+        if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then
+            AnimEnv.setAnimationSpeed(animTime)
+        end
     end
 end
 
@@ -1299,6 +1355,7 @@ function PlaybackTAS(Data, metadata)
             end
         end)
         IsTASSliding = false
+        LastTASAnim = nil
         for _, line in ipairs(PathLines) do pcall(function() line:Destroy() end) end
         PathLines = {}
         if StopPreview == finishPreview then StopPreview = nil end
@@ -1370,7 +1427,7 @@ function PlaybackTAS(Data, metadata)
                     local camB = NewC(unpack(FB.CCameraCFrame, 1, 3)) * AngC(unpack(FB.CCameraCFrame, 4, 6))
                     Cam.CFrame = camA:Lerp(camB, Alpha) + Offset
                 end
-                pcall(ActivateTASAnimation, FA.AAnimation)
+                pcall(ActivateTASAnimation, FA.AAnimation, FA.Sliding, FA.Swimming)
                 finalFrameShown = atEnd
 
             end)

@@ -185,11 +185,17 @@ local SuccessHook, Err = pcall(function()
     assert(IsLaunchCurrent(), "Launch cancelled")
     Animate = getsenv(AnimateScript)
     OriginalPlayAnim = assert(type(Animate.playAnimation) == "function" and Animate.playAnimation, "Animation API changed")
+    local originalSetSpeed = Animate.setAnimationSpeed
 
     -- Cache function globally so re-executions can restore it BEFORE capturing the empty dummy function
     RestoreAnimation = function()
-        if Animate and OriginalPlayAnim then
-            Animate.playAnimation = OriginalPlayAnim
+        if Animate then
+            if OriginalPlayAnim then
+                Animate.playAnimation = OriginalPlayAnim
+            end
+            if originalSetSpeed then
+                Animate.setAnimationSpeed = originalSetSpeed
+            end
         end
     end
     getgenv().TAS_RestoreAnim = RestoreAnimation
@@ -685,8 +691,11 @@ local function activateAnimation(AnimData, Elapsed, frameSliding, frameSwimming)
     if n and (n ~= LastPlayedAnim) then
         Animate.playAnimation = function() end
         pcall(function() OriginalPlayAnim(n, animTime, humanoid) end)
-        if n == "walk" then pcall(function() Animate.setAnimationSpeed(.76) end) end
+        local targetSpd = (n == "walk" and 0.76 or animTime)
+        pcall(function() Animate.setAnimationSpeed(targetSpd) end)
         LastPlayedAnim = n
+    elseif n and n == LastPlayedAnim and n == "walk" and animTime and animTime ~= 0.1 then
+        pcall(function() Animate.setAnimationSpeed(animTime) end)
     end
 end
 
@@ -788,6 +797,7 @@ local function TriggerPauseToggle(requested)
     PAUSED = desired
     if PAUSED then
         PauseCFrame = RootPart.CFrame
+        pcall(function() Animate.setAnimationSpeed(0) end)
         if not (IsCurrentlyZiplining or (LastPlayedAnim == "swing") or IsCurrentlySwimming) then
             pcall(function() OriginalPlayAnim("idle", 0.1, Humanoid) end)
             LastPlayedAnim = "idle"
@@ -796,6 +806,10 @@ local function TriggerPauseToggle(requested)
     else
         PauseCFrame = nil
         LastClock = os.clock()
+        pcall(function()
+            local resumeSpeed = (LastPlayedAnim == "walk" and 0.76 or 1)
+            Animate.setAnimationSpeed(resumeSpeed)
+        end)
         Log("TAS resumed", "Success")
     end
 end
