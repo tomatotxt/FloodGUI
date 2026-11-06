@@ -47,19 +47,32 @@ function Environment.capture(source, getId, now, track, options)
         identities[node],sources[id]=id,node
         return id
     end
+    local function isCloneable(node)
+        if not node then return false end
+        local ok, isTouch = pcall(function() return node:IsA("TouchTransmitter") end)
+        if (ok and isTouch) or node.Name == "TouchInterest" then return false end
+        return true
+    end
+
     local originals={source}
-    for _,node in ipairs(source:GetDescendants()) do table.insert(originals,node) end
+    for _,node in ipairs(source:GetDescendants()) do
+        if isCloneable(node) then
+            table.insert(originals,node)
+        end
+    end
     local originalArchivable={}
     for _,node in ipairs(originals) do
         identity(node)
         originalArchivable[node]=node.Archivable
-        node.Archivable=true
+        pcall(function() node.Archivable=true end)
     end
     local cloned
     local ok,err=pcall(function()
         if options.cloneRoot then cloned=options.cloneRoot(source) else cloned=source:Clone() end
     end)
-    for node,value in pairs(originalArchivable) do node.Archivable=value end
+    for node,value in pairs(originalArchivable) do
+        pcall(function() node.Archivable=value end)
+    end
     assert(ok and cloned, "Cannot capture environment: "..tostring(err))
     cloned.Parent=nil
     local state={root=cloned,objects={},events={},cursor=1,connections={},recording=true}
@@ -81,16 +94,18 @@ function Environment.capture(source, getId, now, track, options)
     end
     local watch
     local function ensure(node)
-        if not node then return nil end
+        if not node or not isCloneable(node) then return nil end
         if node~=source and not node:IsDescendantOf(source) then return nil end
         local target=state.objects[identity(node)]
         if not target then
             local parent=ensure(node.Parent)
             local archivable=node.Archivable
-            node.Archivable=true
+            pcall(function() node.Archivable=true end)
             local worked,result=pcall(function() return node:Clone() end)
-            node.Archivable=archivable
-            assert(worked and result,"Cannot capture created object: "..node.Name)
+            pcall(function() node.Archivable=archivable end)
+            if not worked or not result then
+                return nil
+            end
             target=result
             target.Parent=nil
             target:ClearAllChildren() -- Every child gets its own identity/event.
@@ -105,7 +120,7 @@ function Environment.capture(source, getId, now, track, options)
         return value
     end
     watch=function(node,target)
-        if watched[node] then return end
+        if not target or watched[node] then return end
         watched[node]=true
         local fields={Name=true}
         for class,list in pairs(properties) do
@@ -149,7 +164,7 @@ function Environment.capture(source, getId, now, track, options)
     end
     for _,node in ipairs(originals) do ensure(node) end
     connect(source.DescendantAdded,function(node)
-        if state.recording then ensure(node) end
+        if state.recording and isCloneable(node) then ensure(node) end
     end)
     function state.stop()
         state.recording=false

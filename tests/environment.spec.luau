@@ -45,7 +45,7 @@ function methods:GetAttributes()return table.clone(self.attributes)end
 function methods:SetAttribute(k,v)if self.attributes[k]~=v then self.attributes[k]=v;self.AttributeChanged:Fire(k)end end
 function methods:GetPropertyChangedSignal(k)self.signals[k]=self.signals[k] or signal();return self.signals[k]end
 function methods:Clone()
-    if not self.Archivable then return nil end
+    if not self.Archivable or self.ClassName=="TouchTransmitter" or self.Name=="TouchInterest" then return nil end
     local clone=object(self.ClassName)
     for k,v in pairs(self.props) do if k~="Parent" then clone.props[k]=v end end
     clone.attributes=table.clone(self.attributes)
@@ -59,9 +59,12 @@ local function id(n)local v=n:GetAttribute("TAS_UUID");if not v then serial+=1;v
 local now=0
 local map=object("Model","Map");local part=object("BasePart","Platform")
 part.Anchored=true;part.Transparency=0.5;part.CFrame=10;part.CanCollide=false;part.Parent=map
+local touch=object("TouchTransmitter","TouchInterest");touch.Parent=part
 local state=Environment.capture(map,id,function()return now end,function()end)
 local platform=state.objects[id(part)]
+assert(state.objects[id(touch)]==nil,"TouchInterest must not crash environment capture")
 now=1;part.Anchored=false;part.Transparency=0.8
+local dynamicTouch=object("TouchTransmitter","TouchInterest");dynamicTouch.Parent=part
 local duplicate=part:Clone();duplicate.Parent=map
 assert(id(duplicate)~=id(part),"A cloned live object reused the original capture identity")
 local folder=object("Folder","Created");local water=object("BasePart","_Water");water.Transparency=1;water.Parent=folder;folder.Parent=map

@@ -869,7 +869,10 @@ local function SetupMap()
         replayRoot = Lighting,
         cloneRoot = function(source)
             local folder = Instance.new("Folder")
-            for _, child in ipairs(source:GetChildren()) do child:Clone().Parent = folder end
+            for _, child in ipairs(source:GetChildren()) do
+                local copy = child:Clone()
+                if copy then copy.Parent = folder end
+            end
             return folder
         end,
     })
