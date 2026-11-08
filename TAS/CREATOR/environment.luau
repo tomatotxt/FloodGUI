@@ -56,18 +56,18 @@ function Environment.capture(source, getId, now, track, options)
 
     local originals={source}
     for _,node in ipairs(source:GetDescendants()) do
-        if isCloneable(node) then
-            table.insert(originals,node)
-        end
+        table.insert(originals,node)
     end
     local originalArchivable={}
-    for _,node in ipairs(originals) do
-        identity(node)
-        originalArchivable[node]=node.Archivable
-        pcall(function() node.Archivable=true end)
-    end
     local cloned
     local ok,err=pcall(function()
+        -- Prepare the entire tree before the single root Clone. Roblox preserves
+        -- internal instance references when it clones the hierarchy together.
+        for _,node in ipairs(originals) do
+            if isCloneable(node) then identity(node) end
+            originalArchivable[node]=node.Archivable
+            node.Archivable=true
+        end
         if options.cloneRoot then cloned=options.cloneRoot(source) else cloned=source:Clone() end
     end)
     for node,value in pairs(originalArchivable) do

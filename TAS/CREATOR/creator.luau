@@ -99,7 +99,9 @@ if type(hookmetamethod)=="function" and type(checkcaller)=="function" and not ge
 local OldIndex
 OldIndex = hookmetamethod(game, "__index", function(self, key)
     if not checkcaller() then
-        if IsLaunchCurrent() and getgenv().TAS_Active and key == "Archivable" then return false end
+        -- Resolve the current owner on every read: this hook survives creator reloads.
+        local owner = getgenv().FloodGUICreatorOwner
+        if key == "Archivable" and getgenv().TAS_Active and owner and owner() then return false end
     end
     return OldIndex(self, key)
 end)

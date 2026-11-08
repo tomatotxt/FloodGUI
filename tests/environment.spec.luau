@@ -44,7 +44,16 @@ function methods:GetAttribute(k)return self.attributes[k]end
 function methods:GetAttributes()return table.clone(self.attributes)end
 function methods:SetAttribute(k,v)if self.attributes[k]~=v then self.attributes[k]=v;self.AttributeChanged:Fire(k)end end
 function methods:GetPropertyChangedSignal(k)self.signals[k]=self.signals[k] or signal();return self.signals[k]end
+local rootCloneCalls=0
+local expectedCloneRoot
 function methods:Clone()
+    if self==expectedCloneRoot then
+        rootCloneCalls+=1
+        assert(self.Archivable,"Map root must be archivable before Clone")
+        for _,node in ipairs(self:GetDescendants()) do
+            assert(node.Archivable,"Every map descendant must be archivable before Clone")
+        end
+    end
     if not self.Archivable or self.ClassName=="TouchTransmitter" or self.Name=="TouchInterest" then return nil end
     local clone=object(self.ClassName)
     for k,v in pairs(self.props) do if k~="Parent" then clone.props[k]=v end end
@@ -60,7 +69,13 @@ local now=0
 local map=object("Model","Map");local part=object("BasePart","Platform")
 part.Anchored=true;part.Transparency=0.5;part.CFrame=10;part.CanCollide=false;part.Parent=map
 local touch=object("TouchTransmitter","TouchInterest");touch.Parent=part
+map.Archivable=false;part.Archivable=false;touch.Archivable=false
+expectedCloneRoot=map
 local state=Environment.capture(map,id,function()return now end,function()end)
+assert(rootCloneCalls==1,"Initial map capture must clone the root exactly once")
+assert(not map.Archivable and not part.Archivable and not touch.Archivable,"Capture must restore original Archivable values")
+expectedCloneRoot=nil
+part.Archivable=true
 local platform=state.objects[id(part)]
 assert(state.objects[id(touch)]==nil,"TouchInterest must not crash environment capture")
 now=1;part.Anchored=false;part.Transparency=0.8
