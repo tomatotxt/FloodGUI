@@ -103,12 +103,27 @@ function Library:Window(options)
     end)
     connect(input.WindowFocusReleased,function()window:_cancel()end)
     function window:SetScale(value)
+        if self._destroyed then return end
+        self._requestedScale=tonumber(value) or 1
         local scale=self.Root:FindFirstChild("KavoScale") or create("UIScale",self.Root,{Name="KavoScale"})
         local camera=workspace.CurrentCamera
-        local size=camera and camera.ViewportSize
-        local fit=size and math.min((size.X-20)/525,(size.Y-20)/318)or 1
-        scale.Scale=math.clamp(math.min(tonumber(value)or 1,fit),0.25,1.5)
+        local size=self.Gui.AbsoluteSize or (camera and camera.ViewportSize)
+        if not size or size.X<=0 or size.Y<=0 then return end
+        local fit=math.min((size.X-20)/525,(size.Y-20)/318)
+        scale.Scale=math.clamp(math.min(self._requestedScale,fit),0.25,1.5)
+        local function clampPosition(node,width,height)
+            local position=node.Position
+            local anchor=node.AnchorPoint or Vector2.new(0,0)
+            node.Position=UDim2.fromOffset(
+                math.clamp(position.X.Scale*size.X+position.X.Offset,anchor.X*width,math.max(anchor.X*width,size.X-(1-anchor.X)*width)),
+                math.clamp(position.Y.Scale*size.Y+position.Y.Offset,anchor.Y*height,math.max(anchor.Y*height,size.Y-(1-anchor.Y)*height)))
+        end
+        clampPosition(self.Root,525*scale.Scale,318*scale.Scale)
+        clampPosition(self.OpenButton,45,45)
     end
+    connect(window.Gui:GetPropertyChangedSignal("AbsoluteSize"),function()
+        window:SetScale(window._requestedScale or 1)
+    end)
     function window:Destroy()
         if self._destroyed then return end
         self._destroyed=true
@@ -125,7 +140,7 @@ function Library:Window(options)
         local toast=create("Frame",self.Gui,{Name="KavoNotification",Size=UDim2.fromOffset(300,80),
             AnchorPoint=Vector2.new(1,1),BackgroundColor3=theme.Header,BorderSizePixel=0,ZIndex=1000})
         create("UICorner",toast,{CornerRadius=UDim.new(0,4)})
-        create("Frame",toast,{Size=UDim2.new(0,3,1,0),BackgroundColor3=theme.SchemeColor,BorderSizePixel=0,ZIndex=1001})
+        create("Frame",toast,{Size=UDim2.new(0,3,1,0),BackgroundColor3=Library.Theme[message.Type] or theme.SchemeColor,BorderSizePixel=0,ZIndex=1001})
         create("TextLabel",toast,{Position=UDim2.fromOffset(12,5),Size=UDim2.new(1,-24,1,-10),
             BackgroundTransparency=1,Text=(message.Title or "FloodGUI").."\n"..tostring(message.Content),
             Font=Enum.Font.Gotham,TextSize=13,TextWrapped=true,TextColor3=theme.TextColor,
@@ -223,6 +238,14 @@ function Library:Window(options)
                     if opts.OnChanged then opts.OnChanged(key)end
                 end
             else handle=g:NewLabel(opts.Text or c._name)end
+            if kind=="Slider" then
+                local precision=0
+                local step=opts.Step or 1
+                while precision<4 and math.abs(step*10^precision-math.round(step*10^precision))>0.00001 do precision+=1 end
+                handle.FormatValue=function(value)return string.format("%."..precision.."f",value)..(opts.Suffix or "")end
+            elseif kind=="Input" and opts.Placeholder then
+                handle.TextBox.PlaceholderText=opts.Placeholder
+            end
             c._frame=handle.Frame
             c._native=handle
             local symbols={clapperboard="record",video="record",play="play",square="stop"}
@@ -243,6 +266,17 @@ function Library:Window(options)
                     end
                 end
             end
+            local progressFill
+            if kind=="Progress"then
+                c._frame.Size=UDim2.fromOffset(352,44)
+                local padding=c._frame:FindFirstChildWhichIsA("UIPadding")
+                if padding then padding.PaddingBottom=UDim.new(0,10)end
+                local track=create("Frame",c._frame,{Name="ProgressTrack",Position=UDim2.new(0,10,1,-10),Size=UDim2.new(1,-20,0,4),BackgroundColor3=theme.Header,BorderSizePixel=0})
+                create("UICorner",track,{CornerRadius=UDim.new(1,0)})
+                progressFill=create("Frame",track,{Name="ProgressFill",Size=UDim2.fromScale(0,1),BorderSizePixel=0})
+                create("UICorner",progressFill,{CornerRadius=UDim.new(1,0)})
+                native:RegisterAccent(progressFill,"BackgroundColor3")
+            end
             if kind=="Button" and opts.Style=="Primary"then
                 local outline=create("UIStroke",c._frame,{Thickness=1.5,Transparency=0.2,ApplyStrokeMode=Enum.ApplyStrokeMode.Border})
                 native:RegisterAccent(outline,"Color")
@@ -256,7 +290,11 @@ function Library:Window(options)
                 elseif kind=="Keybind"then if value then handle:Set(value)end
                 elseif kind=="Label"then handle:UpdateLabel(tostring(value or ""))
                 elseif kind=="Paragraph"then handle:UpdateLabel((c._name~="" and c._name.."\n" or "")..tostring(value or ""))
-                elseif kind=="Progress"then handle:UpdateLabel(c._name.."  "..math.floor((value or 0)*100).."%")end
+                elseif kind=="Progress"then
+                    local fraction=math.clamp(tonumber(value)or 0,0,1)
+                    handle:UpdateLabel(c._name.."  "..math.floor(fraction*100).."%")
+                    progressFill.Size=UDim2.fromScale(fraction,1)
+                end
                 suppressed=false
             end
             function c:IsEditing()
@@ -269,6 +307,7 @@ function Library:Window(options)
             function c:Set(value,silent)
                 if self._destroyed or window._destroyed then return end
                 if kind=="Slider"then value=math.clamp(value,opts.Min or 0,opts.Max or 100)end
+                if silent and self._value==value then return end
                 self._value=value
                 self._render(value)
                 if not silent and opts.Callback and kind~="Label" and kind~="Paragraph" and kind~="Progress"then opts.Callback(value)end

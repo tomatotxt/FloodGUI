@@ -36,7 +36,7 @@ return function(vendorSource,adapterSource,inputSource)
     end
     local function instance(class,parent)
         local t=setmetatable({props={ClassName=class,Name=class,Visible=true,Text="",ZIndex=1,
-            AbsoluteSize=vec(149,33),AbsolutePosition=vec(0,0),AbsoluteContentSize=vec(352,100),TextBounds=vec(100,18)},
+            AbsoluteSize=class=="ScreenGui" and vec(1280,720) or vec(149,33),AbsolutePosition=vec(0,0),AbsoluteContentSize=vec(352,100),TextBounds=vec(100,18)},
             events={},changes={},attributes={}},mt)
         for _,name in ipairs({"MouseButton1Click","MouseButton1Down","MouseEnter","MouseLeave","InputBegan","InputChanged","InputEnded","Changed","FocusLost","Activated","Destroying"})do t.events[name]=signal()end
         table.insert(objects,t);t.Parent=parent;return t
@@ -107,12 +107,22 @@ return function(vendorSource,adapterSource,inputSource)
     assert(not text:IsEditing())
     text._native.TextBox.Text="Edited";text._native.TextBox.FocusLost:Fire(false)
     assert(text:Get()=="Edited","Text must not clear when focus leaves")
+    local progress=page:Progress({Name="Playback",Default=0})
+    progress:Set(0.5,true)
+    local progressFill=progress._frame:FindFirstChild("ProgressTrack"):FindFirstChild("ProgressFill")
+    assert(progressFill.Size.X.Scale==0.5 and progress._frame.Text=="Playback  50%","Progress bar and percentage must agree")
+    progress:Set(2,true);assert(progressFill.Size.X.Scale==1,"Progress fill must stay inside its track")
     local sliderValue
-    local slider=page:Slider({Name="Speed",Min=0.1,Max=3,Step=0.05,Default=1.25,Callback=function(v)sliderValue=v end})
+    local slider=page:Slider({Name="Speed",Min=0.1,Max=3,Step=0.05,Suffix="x",Default=1.25,Callback=function(v)sliderValue=v end})
     assert(slider:Get()==1.25)
     local sliderBar
     for _,o in ipairs(slider._frame:GetChildren())do if o:IsA("TextButton")then sliderBar=o end end
     assert(sliderBar)
+    assert(slider._frame.Size.Y.Offset==52 and sliderBar.Size.Y.Offset==20,"Slider needs separate text and accessible drag rows")
+    assert(sliderBar:FindFirstChild("SliderTrack").Size.Y.Offset==6,"Wider target must retain the slim visual track")
+    local valueLabel
+    for _,node in ipairs(slider._frame:GetChildren())do if node:IsA("TextLabel") and node.Text=="1.25x"then valueLabel=node end end
+    assert(valueLabel,"Slider must display stable precision and its unit")
     sliderBar.AbsoluteSize=vec(149,6)
     local finger={UserInputType=enums.UserInputType.Touch,Position=vec(75,0)}
     sliderBar.InputBegan:Fire(finger)
@@ -290,6 +300,13 @@ return function(vendorSource,adapterSource,inputSource)
     input.InputBegan:Fire({KeyCode=enums.KeyCode.P,UserInputType=enums.UserInputType.Keyboard},false)
     assert(presses==2,"Normal input must resume after capture")
     inputAPI:Destroy()
+    w:SetScale(1.25)
+    w.Gui.AbsoluteSize=vec(375,667)
+    local responsiveScale=w.Root:FindFirstChild("KavoScale").Scale
+    assert(responsiveScale<1 and math.abs(responsiveScale-355/525)<0.001,"Screen resize must refit the window")
+    assert(w.Root.Position.X.Offset+525*responsiveScale<=375.01,"Resized window extends outside the screen")
+    w.Gui.AbsoluteSize=vec(1280,720)
+    assert(w.Root:FindFirstChild("KavoScale").Scale==1.25,"Growing viewport must restore requested scale")
     local inputBefore=input.InputBegan:Count()
     assert(inputBefore>0)
     w.Gui:Destroy()

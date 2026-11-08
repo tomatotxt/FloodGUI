@@ -235,7 +235,9 @@ function Kavo.CreateLib(kavName, themeList, options)
     local title = Instance.new("TextLabel", MainHeader)
     title.BackgroundTransparency = 1.000
     title.Position = UDim2.new(0.017, 0, 0.344, 0)
-    title.Size = UDim2.new(0, 204, 0, 8)
+    title.Size = UDim2.fromOffset(475, 21)
+    title.Position = UDim2.fromOffset(9, 4)
+    title.TextTruncate = Enum.TextTruncate.AtEnd
     title.Font = Enum.Font.Gotham
     title.RichText = true
     title.Text = kavName
@@ -410,7 +412,8 @@ function Kavo.CreateLib(kavName, themeList, options)
         moreInfo.Font = Enum.Font.GothamSemibold
         moreInfo.RichText = true
         moreInfo.Text = "  " .. tipText
-        moreInfo.TextSize = 14.000
+        moreInfo.TextSize = 12.000
+        moreInfo.TextWrapped = true
         moreInfo.TextXAlignment = Enum.TextXAlignment.Left
         Instance.new("UICorner", moreInfo).CornerRadius = UDim.new(0, 4)
         RegisterTheme(moreInfo, "BackgroundColor3", "ElementColor")
@@ -615,6 +618,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 btnInfo.Text = bname
                 btnInfo.TextSize = 14.000
                 btnInfo.TextXAlignment = Enum.TextXAlignment.Left
+                btnInfo.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(btnInfo, "TextColor3", "TextColor")
 
                 local touch = Instance.new("ImageLabel", btn)
@@ -679,6 +683,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 togName.Text = tname or "Textbox"
                 togName.TextSize = 14.000
                 togName.TextXAlignment = Enum.TextXAlignment.Left
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(togName, "TextColor3", "TextColor")
 
                 local TextBox = Instance.new("TextBox", btn)
@@ -760,6 +765,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 togName.Text = tname
                 togName.TextSize = 14.000
                 togName.TextXAlignment = Enum.TextXAlignment.Left
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(togName, "TextColor3", "TextColor")
 
                 local viewInfo = Instance.new("ImageButton", btn)
@@ -779,8 +785,8 @@ function Kavo.CreateLib(kavName, themeList, options)
                     if not state.focusing then
                         toggled = not toggled
                         Utility:TweenObject(toggleEnabled, {ImageTransparency = toggled and 0 or 1}, 0.11)
-                        Utility:CreateRipple(btn, themeList.SchemeColor)
                         pcall(callback, toggled)
+                        Utility:CreateRipple(btn, themeList.SchemeColor)
                     end
                 end)
 
@@ -799,7 +805,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 maxvalue = maxvalue or 500
 
                 local btn = Instance.new("TextButton", sectionInners)
-                btn.Size = UDim2.new(0, 352, 0, 33)
+                btn.Size = UDim2.new(0, 352, 0, 52)
                 btn.AutoButtonColor = false
                 btn.Text = ""
                 RegisterTheme(btn, "BackgroundColor3", "ElementColor")
@@ -817,29 +823,32 @@ function Kavo.CreateLib(kavName, themeList, options)
 
                 local togName = Instance.new("TextLabel", btn)
                 togName.BackgroundTransparency = 1.000
-                togName.Position = UDim2.new(0.096, 0, 0.272, 0)
-                togName.Size = UDim2.new(0, 138, 0, 14)
+                togName.Position = UDim2.fromOffset(34, 6)
+                togName.Size = UDim2.fromOffset(225, 18)
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 togName.Font = Enum.Font.GothamSemibold
                 togName.Text = slidInf or "Slider"
                 togName.TextSize = 14.000
                 togName.TextXAlignment = Enum.TextXAlignment.Left
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(togName, "TextColor3", "TextColor")
 
                 local val = Instance.new("TextLabel", btn)
                 val.BackgroundTransparency = 1.000
-                val.Position = UDim2.new(0.352, 0, 0.272, 0)
-                val.Size = UDim2.new(0, 41, 0, 14)
+                val.Position = UDim2.fromOffset(261, 6)
+                val.Size = UDim2.fromOffset(61, 18)
                 val.Font = Enum.Font.GothamSemibold
                 val.Text = tostring(minvalue)
-                val.TextSize = 14.000
+                val.TextSize = 12.000
                 val.TextTransparency = 1.000
                 val.TextXAlignment = Enum.TextXAlignment.Right
                 RegisterTheme(val, "TextColor3", "TextColor")
 
                 local sliderBtn = Instance.new("TextButton", btn)
                 sliderBtn.BorderSizePixel = 0
-                sliderBtn.Position = UDim2.new(0.488, 0, 0.393, 0)
-                sliderBtn.Size = UDim2.new(0, 149, 0, 6)
+                sliderBtn.Position = UDim2.fromOffset(34, 28)
+                sliderBtn.Size = UDim2.fromOffset(288, 20)
+                sliderBtn.BackgroundTransparency = 1
                 sliderBtn.AutoButtonColor = false
                 sliderBtn.Text = ""
                 Instance.new("UICorner", sliderBtn)
@@ -847,10 +856,15 @@ function Kavo.CreateLib(kavName, themeList, options)
                     return Color3.fromRGB(math.clamp(c.r*255+5,0,255), math.clamp(c.g*255+5,0,255), math.clamp(c.b*255+5,0,255))
                 end)
                 
-                local UIListLayout = Instance.new("UIListLayout", sliderBtn)
-                UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                local track = Instance.new("Frame", sliderBtn)
+                track.Name="SliderTrack"
+                track.BorderSizePixel=0
+                track.Position=UDim2.new(0,0,0.5,-3)
+                track.Size=UDim2.new(1,0,0,6)
+                Instance.new("UICorner",track).CornerRadius=UDim.new(1,0)
+                RegisterTheme(track,"BackgroundColor3","Header")
 
-                local sliderDrag = Instance.new("Frame", sliderBtn)
+                local sliderDrag = Instance.new("Frame", track)
                 sliderDrag.BorderSizePixel = 0
                 sliderDrag.Size = UDim2.new(0, 0, 1, 0)
                 Instance.new("UICorner", sliderDrag)
@@ -884,7 +898,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                     local fraction=math.clamp((x-sliderBtn.AbsolutePosition.X)/math.max(sliderBtn.AbsoluteSize.X,1),0,1)
                     Value=minvalue+(maxvalue-minvalue)*fraction
                     sliderDrag.Size=UDim2.new(fraction,0,0,6)
-                    val.Text=tostring(Value)
+                    val.Text=sliderHandle.FormatValue and sliderHandle.FormatValue(Value) or string.format("%.3g",Value)
                     val.TextTransparency=0
                     if callback then callback(Value)end
                 end
@@ -906,7 +920,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 end)
                 function sliderHandle:Set(value)
                     Value=math.clamp(value,minvalue,maxvalue)
-                    val.Text=tostring(Value)
+                    val.Text=sliderHandle.FormatValue and sliderHandle.FormatValue(Value) or string.format("%.3g",Value)
                     val.TextTransparency=0
                     sliderDrag.Size=UDim2.new(maxvalue==minvalue and 0 or (Value-minvalue)/(maxvalue-minvalue),0,0,6)
                 end
@@ -945,7 +959,8 @@ function Kavo.CreateLib(kavName, themeList, options)
                 local itemTextbox = Instance.new("TextLabel", dropOpen)
                 itemTextbox.BackgroundTransparency = 1.000
                 itemTextbox.Position = UDim2.new(0.097, 0, 0.273, 0)
-                itemTextbox.Size = UDim2.new(0, 138, 0, 14)
+                itemTextbox.Size = UDim2.new(0, 285, 0, 18)
+                itemTextbox.TextTruncate = Enum.TextTruncate.AtEnd
                 itemTextbox.Font = Enum.Font.GothamSemibold
                 itemTextbox.Text = dropname or "Dropdown"
                 itemTextbox.TextSize = 14.000
@@ -983,6 +998,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                         optionSelect.Text = "  " .. v
                         optionSelect.TextSize = 14.000
                         optionSelect.TextXAlignment = Enum.TextXAlignment.Left
+                        optionSelect.TextTruncate = Enum.TextTruncate.AtEnd
                         optionSelect.ClipsDescendants = true
                         Instance.new("UICorner", optionSelect).CornerRadius = UDim.new(0, 4)
                         
@@ -1052,6 +1068,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 togName.Text = keytext or "KeybindText"
                 togName.TextSize = 14.000
                 togName.TextXAlignment = Enum.TextXAlignment.Left
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(togName, "TextColor3", "TextColor")
 
                 local togName_2 = Instance.new("TextLabel", btn)
@@ -1147,6 +1164,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 togName.Text = colText or "ColorPicker"
                 togName.TextSize = 14.000
                 togName.TextXAlignment = Enum.TextXAlignment.Left
+                togName.TextTruncate = Enum.TextTruncate.AtEnd
                 RegisterTheme(togName, "TextColor3", "TextColor")
 
                 local colorCurrent = Instance.new("Frame", colorHeader)
