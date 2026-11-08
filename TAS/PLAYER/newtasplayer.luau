@@ -18,6 +18,7 @@ Own(function() INPUT:Destroy() end)
 
 local UserInputService = game:GetService("UserInputService")
 local UI = Runtime.run("ui/service.luau")
+INPUT.ShouldIgnore = function(pressed) return UI.isKeyboardBlocked(pressed) end
 local sharedState = getgenv().State and getgenv().State() or {}
 local PlayerUI
 

@@ -108,6 +108,10 @@ function UI.notify(message, kind)
 	return false
 end
 
+function UI.isKeyboardBlocked(pressed)
+    return Renderer:IsKeyboardBlocked(pressed)
+end
+
 function UI.confirm(window, title, content, action)
 	window:Confirm({ Title = title, Content = content, ConfirmText = "Continue", Callback = action })
 end

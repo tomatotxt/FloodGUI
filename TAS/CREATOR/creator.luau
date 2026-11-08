@@ -1675,7 +1675,8 @@ AddConnection(HBCon)
 
 -- // INPUTS //
 local InputCon = UserInputService.InputBegan:Connect(function(input, processed)
-    if processed or UserInputService:GetFocusedTextBox() then return end
+    local ui=getgenv().FloodGUIUI
+    if processed or UserInputService:GetFocusedTextBox() or (ui and ui.isKeyboardBlocked and ui.isKeyboardBlocked(input)) then return end
     local key = input.KeyCode.Name
     if key == Keybinds.GoFrameForward then
         if not IsRewinding and not IsAdvancingFrame then task.spawn(FrameAdvanceLoop) end

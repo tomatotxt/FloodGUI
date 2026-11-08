@@ -94,7 +94,7 @@ return function(context)
 	end
 	local function sync()
 		for _, item in ipairs(bindings) do
-			if item.control:Get() ~= State[item.key] then
+			if not (item.control.IsEditing and item.control:IsEditing()) and item.control:Get() ~= State[item.key] then
 				item.control:Set(State[item.key], true)
 			end
 		end

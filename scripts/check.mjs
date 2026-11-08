@@ -92,7 +92,7 @@ try{
   execFileSync(tool('luau'),[airflowFile],{stdio:'inherit'});
   const kavoTest=fs.readFileSync(path.join(root,'tests/kavo-harness.luau'),'utf8');
   const kavoFile=path.join(temp,'kavo.spec.luau');
-  fs.writeFileSync(kavoFile,`local test=assert(loadstring(${literal(kavoTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'vendor/kavo.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'ui/kavo.luau'),'utf8'))})`);
+  fs.writeFileSync(kavoFile,`local test=assert(loadstring(${literal(kavoTest)}))()\ntest(${literal(fs.readFileSync(path.join(root,'vendor/kavo.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'ui/kavo.luau'),'utf8'))},${literal(fs.readFileSync(path.join(root,'vendor/input.luau'),'utf8'))})`);
   execFileSync(tool('luau'),[kavoFile],{stdio:'inherit'});
   const enginesTest=fs.readFileSync(path.join(root,'tests/tas-engines-harness.luau'),'utf8');
   const enginesFile=path.join(temp,'tas-engines.spec.luau');

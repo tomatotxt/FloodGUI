@@ -3,6 +3,13 @@
 local Runtime=assert(getgenv().FloodGUIRuntime,"Start FloodGUI through loader.lua")
 local Kavo=Runtime.run("vendor/kavo.luau")
 local Library={Theme={}}
+local windows=setmetatable({},{__mode="k"})
+function Library:IsKeyboardBlocked(pressed)
+    for window in pairs(windows)do
+        if not window._destroyed and (window._modal or window._native.Capturing or (pressed and window._native.CapturedInput==pressed))then return true end
+    end
+    return false
+end
 local function create(class,parent,props)
     local node=Instance.new(class)
     for key,value in pairs(props or {})do node[key]=value end
@@ -16,6 +23,7 @@ function Library:Window(options)
     local native=Kavo.CreateLib(options.Title,theme,{Parent=options.Parent,Name=options.Name,DisplayOrder=options.DisplayOrder})
     local window={Gui=native.Gui,Root=native.Root,OpenButton=native.OpenButton,Open=true,
         _destroyed=false,_listeners={},_native=native,_key=options.Keybind,_tabs={},_toasts={}}
+    windows[window]=true
     local input=game:GetService("UserInputService")
     local function connect(signal,fn)return native.Connect(signal,fn)end
     function window:_listen(event,fn,owner)
@@ -90,7 +98,7 @@ function Library:Window(options)
         if selected then selected:Select()end
     end
     connect(input.InputBegan,function(pressed,processed)
-        if processed or native.Capturing or input:GetFocusedTextBox()then return end
+        if processed or Library:IsKeyboardBlocked(pressed) or input:GetFocusedTextBox()then return end
         if pressed.KeyCode==window._key then window:Toggle()end
     end)
     connect(input.WindowFocusReleased,function()window:_cancel()end)
@@ -205,10 +213,12 @@ function Library:Window(options)
             elseif kind=="Input"then handle=g:NewTextBox(c._name,opts.Desc,fire)
             elseif kind=="Dropdown"then handle=g:NewDropdown(c._name,opts.Desc,c._options,fire)
             elseif kind=="Keybind"then
-                handle=g:NewKeybind(c._name,opts.Desc,opts.Default or Enum.KeyCode.Unknown,function()
+                handle=g:NewKeybind(c._name,opts.Desc,opts.Default or Enum.KeyCode.Unknown,function(pressed)
+                    if Library:IsKeyboardBlocked(pressed) then return end
                     if not c._disabled and not c._destroyed and not window._modal and opts.Callback then opts.Callback()end
                 end)
                 handle.OnChanged=function(key)
+                    if c._disabled or c._destroyed or window._destroyed or window._modal then return end
                     c._value=key
                     if opts.OnChanged then opts.OnChanged(key)end
                 end
@@ -249,6 +259,9 @@ function Library:Window(options)
                 elseif kind=="Progress"then handle:UpdateLabel(c._name.."  "..math.floor((value or 0)*100).."%")end
                 suppressed=false
             end
+            function c:IsEditing()
+                return kind=="Input" and input:GetFocusedTextBox()==handle.TextBox
+            end
             function c:Get()
                 if kind=="Input"then return handle.TextBox.Text end
                 return self._value
@@ -286,6 +299,8 @@ function Library:Window(options)
                 if self._destroyed then return end
                 window:_cancel()
                 self._destroyed=true
+                handle.Disabled=true
+                if handle.Cancel then handle:Cancel()end
                 self._frame:Destroy()
             end
             if kind=="Paragraph"then

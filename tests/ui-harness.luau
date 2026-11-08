@@ -358,6 +358,14 @@ return function(sources)
 	state.Noclip = false
 	main.sync()
 	assert(not main.controls.Noclip:Get(), "Keyboard change not reflected")
+	local target=main.controls.TargetMapName
+	target.Value="Draft map name"
+	target.IsEditing=function()return true end
+	main.sync()
+	assert(target:Get()=="Draft map name","Background UI synchronization erased an unfinished map name")
+	target.IsEditing=function()return false end
+	main.sync()
+	assert(target:Get()==state.TargetMapName,"Unfocused input must still synchronize model changes")
 	main.controls.StartDelay:Set(2.5)
 	assert(state.StartDelay == 2.5)
 	assert(effects.preferenceKey == "StartDelay", "Preference changes must reach persistence")

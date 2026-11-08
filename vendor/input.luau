@@ -100,6 +100,7 @@ end
 -- =================================================================
 local InputAPI = {
     IgnoreGameProcessed = true, -- If true, ignores inputs processed by UI (e.g., chat typing)
+    ShouldIgnore = false,
     _nodes = {},
     _activeInputs = {}
 }
@@ -146,6 +147,7 @@ end
 -- Hook Roblox UserInputService Events
 local beganConnection = UserInputService.InputBegan:Connect(function(inputObject, gameProcessed)
     if InputAPI.IgnoreGameProcessed and gameProcessed then return end
+    if UserInputService:GetFocusedTextBox() or (InputAPI.ShouldIgnore and InputAPI.ShouldIgnore(inputObject)) then return end
     InputAPI._activeInputs[inputObject.KeyCode] = true
     InputAPI._activeInputs[inputObject.UserInputType] = true
     handleInput(inputObject, false)

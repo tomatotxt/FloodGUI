@@ -18,35 +18,36 @@ local Objects = {}
 function Kavo:DraggingEnabled(frame, parent, Connect)
     Connect = Connect or function(signal,fn) return signal:Connect(fn) end
     parent = parent or frame
-    local dragging = false
-    local dragInput, mousePos, framePos
-
-    Connect(frame.InputBegan, function(inputObj)
-        if inputObj.UserInputType == Enum.UserInputType.MouseButton1 or inputObj.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            mousePos = inputObj.Position
-            framePos = parent.Position
-            
-            Connect(inputObj.Changed, function()
-                if inputObj.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
+    local dragging, mousePos, framePos
+    local function cancel() dragging=nil end
+    Connect(frame.InputBegan, function(pointer)
+        if dragging then return end
+        if pointer.UserInputType == Enum.UserInputType.MouseButton1 or pointer.UserInputType == Enum.UserInputType.Touch then
+            dragging,mousePos,framePos=pointer,pointer.Position,parent.Position
         end
     end)
-
-    Connect(frame.InputChanged, function(inputObj)
-        if inputObj.UserInputType == Enum.UserInputType.MouseMovement or inputObj.UserInputType == Enum.UserInputType.Touch then
-            dragInput = inputObj
+    Connect(input.InputChanged, function(pointer)
+        if not dragging then return end
+        if pointer~=dragging and not (dragging.UserInputType==Enum.UserInputType.MouseButton1 and pointer.UserInputType==Enum.UserInputType.MouseMovement) then return end
+        local delta=pointer.Position-mousePos
+        local screen=parent.Parent
+        local camera=workspace.CurrentCamera
+        local viewport=screen and screen.AbsoluteSize or (camera and camera.ViewportSize)
+        if viewport and viewport.X>0 and viewport.Y>0 then
+            local anchor=parent.AnchorPoint or Vector2.new(0,0)
+            local size=parent.AbsoluteSize
+            local x=framePos.X.Scale*viewport.X+framePos.X.Offset+delta.X
+            local y=framePos.Y.Scale*viewport.Y+framePos.Y.Offset+delta.Y
+            parent.Position=UDim2.fromOffset(
+                math.clamp(x,anchor.X*size.X,math.max(anchor.X*size.X,viewport.X-(1-anchor.X)*size.X)),
+                math.clamp(y,anchor.Y*size.Y,math.max(anchor.Y*size.Y,viewport.Y-(1-anchor.Y)*size.Y)))
+        else
+            parent.Position=UDim2.new(framePos.X.Scale,framePos.X.Offset+delta.X,framePos.Y.Scale,framePos.Y.Offset+delta.Y)
         end
     end)
-
-    Connect(input.InputChanged, function(inputObj)
-        if inputObj == dragInput and dragging then
-            local delta = inputObj.Position - mousePos
-            parent.Position  = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
-        end
-    end)
+    Connect(input.InputEnded,function(pointer)if pointer==dragging then cancel()end end)
+    Connect(input.WindowFocusReleased,cancel)
+    return cancel
 end
 
 function Utility:TweenObject(obj, properties, duration, ...)
@@ -223,7 +224,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     MainHeader.Size = UDim2.new(0, 525, 0, 29)
     RegisterTheme(MainHeader, "BackgroundColor3", "Header")
     Instance.new("UICorner", MainHeader).CornerRadius = UDim.new(0, 4)
-    Kavo:DraggingEnabled(MainHeader, Main, Connect)
+    table.insert(interactions,Kavo:DraggingEnabled(MainHeader, Main, Connect))
 
     local coverup = Instance.new("Frame", MainHeader)
     coverup.BorderSizePixel = 0
@@ -304,7 +305,7 @@ function Kavo.CreateLib(kavName, themeList, options)
     floatingClick.ZIndex = 100002
     floatingClick.Active = true
 
-    Kavo:DraggingEnabled(floatingClick, floatingToggle, Connect)
+    table.insert(interactions,Kavo:DraggingEnabled(floatingClick, floatingToggle, Connect))
 
     -- Toggle Minimize/Restore Logic
     local savedPos = UDim2.new(0.336, 0, 0.275, 0)
@@ -965,7 +966,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 BindHover(dropOpen, state)
 
                 Connect(dropOpen.MouseButton1Click, function()
-                    if not state.focusing then
+                    if not state.focusing and not DropFunction.Disabled then
                         opened = not opened
                         local ySize = opened and UIListLayout.AbsoluteContentSize.Y or 33
                         dropFrame:TweenSize(UDim2.new(0, 352, 0, ySize), "InOut", "Linear", 0.08, true)
@@ -992,10 +993,10 @@ function Kavo.CreateLib(kavName, themeList, options)
                         BindHover(optionSelect, state)
 
                         Connect(optionSelect.MouseButton1Click, function()
-                            if not state.focusing then
+                            if not state.focusing and not DropFunction.Disabled then
                                 opened = false
-                                callback(v)
                                 itemTextbox.Text = v
+                                callback(v)
                                 dropFrame:TweenSize(UDim2.new(0, 352, 0, 33), 'InOut', 'Linear', 0.08)
                                 Utility:CreateRipple(optionSelect, themeList.SchemeColor)
                             end
@@ -1005,6 +1006,11 @@ function Kavo.CreateLib(kavName, themeList, options)
                 
                 if list then AddOptions(list) end
 
+                function DropFunction:Cancel()
+                    opened=false
+                    dropFrame.Size=UDim2.fromOffset(352,33)
+                end
+                table.insert(interactions,function()DropFunction:Cancel()end)
                 function DropFunction:Refresh(newList)
                     for _, v in ipairs(dropFrame:GetChildren()) do
                         if v:IsA("TextButton") and v ~= dropOpen then v:Destroy() end
@@ -1083,20 +1089,22 @@ function Kavo.CreateLib(kavName, themeList, options)
                     togName_2.Text=oldKey
                 end
                 Connect(btn.MouseButton1Click,function()
-                    if state.focusing then return end
+                    if state.focusing or keyHandle.Disabled or not btn.Parent then return end
                     if Tabs.Capturing then Tabs.Capturing:Cancel() end
                     capturing=true;Tabs.Capturing=keyHandle;togName_2.Text=". . ."
                 end)
                 Connect(input.InputBegan,function(current,processed)
+                    if keyHandle.Disabled or not btn.Parent then return end
                     if capturing then
                         if current.UserInputType~=Enum.UserInputType.Keyboard then return end
+                        Tabs.CapturedInput=current
                         keyHandle:Cancel()
                         if current.KeyCode~=Enum.KeyCode.Escape and current.KeyCode~=Enum.KeyCode.Unknown then
                             keyHandle:Set(current.KeyCode)
                             if keyHandle.OnChanged then keyHandle.OnChanged(current.KeyCode) end
                         end
-                    elseif not Tabs.Capturing and not processed and not input:GetFocusedTextBox() and current.KeyCode.Name==oldKey then
-                        if callback then callback() end
+                    elseif not Tabs.Capturing and Tabs.CapturedInput~=current and not processed and not input:GetFocusedTextBox() and current.KeyCode.Name==oldKey then
+                        if callback then callback(current) end
                     end
                 end)
                 return keyHandle

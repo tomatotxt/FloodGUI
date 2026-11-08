@@ -1,5 +1,5 @@
 -- Actual vendored Kavo plus the actual adapter; only Roblox is mocked.
-return function(vendorSource,adapterSource)
+return function(vendorSource,adapterSource,inputSource)
     local function signal()
         local s={listeners={}}
         function s:Connect(fn)
@@ -24,6 +24,8 @@ return function(vendorSource,adapterSource)
         rawset(t,k,group);return group
     end})
     local input={InputBegan=signal(),InputChanged=signal(),InputEnded=signal(),WindowFocusReleased=signal(),GetFocusedTextBox=function()return nil end}
+    local focused
+    input.GetFocusedTextBox=function()return focused end
     local mouse={X=0,Y=0,Move=signal()}
     local objects={}
     local methods={}
@@ -71,7 +73,8 @@ return function(vendorSource,adapterSource)
         workspace={CurrentCamera={ViewportSize=vec(1280,720)}},Color3={fromRGB=color},
         UDim={new=function(s,o)return {Scale=s,Offset=o}end},UDim2={new=dim,fromOffset=function(x,y)return dim(0,x,0,y)end,fromScale=function(x,y)return dim(x,0,y,0)end},
         Vector2={new=vec},TweenInfo={new=function()return {}end},
-        task={wait=function(seconds)if seconds==1.5 then coroutine.yield()end end,delay=function(_,fn)table.insert(timers,fn)end},
+        typeof=function(v)if type(v)=="table" and v.Name then return "EnumItem" end;return type(v)end,
+        task={spawn=function(fn,...)fn(...)end,wait=function(seconds)if seconds==1.5 then coroutine.yield()end end,delay=function(_,fn)table.insert(timers,fn)end},
     },{__index=getfenv()})
     local function load(source)local fn=assert(loadstring(source));setfenv(fn,env);return fn()end
     local vendor=load(vendorSource)
@@ -98,6 +101,10 @@ return function(vendorSource,adapterSource)
     toggle:SetDisabled(false)
     local text=page:Input({Name="Filename",Default="My Run"})
     assert(text:Get()=="My Run")
+    focused=text._native.TextBox
+    assert(text:IsEditing(),"Input must expose focus so polling cannot replace drafts")
+    focused=nil
+    assert(not text:IsEditing())
     text._native.TextBox.Text="Edited";text._native.TextBox.FocusLost:Fire(false)
     assert(text:Get()=="Edited","Text must not clear when focus leaves")
     local sliderValue
@@ -120,12 +127,39 @@ return function(vendorSource,adapterSource)
     choice:Refresh({"B","C"},true);assert(choice:Get()=="B")
     for _,o in ipairs(choice._frame:GetChildren())do if o:IsA("TextButton")and o.Text=="  C"then o.MouseButton1Click:Fire()end end
     assert(choice:Get()=="C"and selected=="C")
+    -- A rejected selection must leave both the displayed label and model intact.
+    choice:SetDisabled(true)
+    for _,o in ipairs(choice._frame:GetChildren())do if o:IsA("TextButton")and o.Text=="  B"then o.MouseButton1Click:Fire()end end
+    local choiceLabel=choice._frame:FindFirstChildWhichIsA("TextButton"):FindFirstChildWhichIsA("TextLabel")
+    assert(choice:Get()=="C" and choiceLabel.Text=="C","Disabled dropdown changed its displayed selection")
+    choice:SetDisabled(false)
+    choice._frame:FindFirstChildWhichIsA("TextButton").MouseButton1Click:Fire()
+    assert(choice._frame.Size.Y.Offset>33,"Test must open the dropdown before cancellation")
+    w:_cancel()
+    assert(choice._frame.Size.Y.Offset==33,"Cancellation must collapse open dropdowns")
+    -- Exercise a callback that deliberately clears its own selection.
+    local resetChoice
+    resetChoice=page:Dropdown({Name="Clear on select",Options={"A","B"},Default="A",Callback=function()resetChoice:Set(nil,true)end})
+    for _,o in ipairs(resetChoice._frame:GetChildren())do if o:IsA("TextButton")and o.Text=="  B"then o.MouseButton1Click:Fire()end end
+    assert(resetChoice:Get()==nil and resetChoice._frame:FindFirstChildWhichIsA("TextButton"):FindFirstChildWhichIsA("TextLabel").Text=="Clear on select","Native dropdown overwrote callback's chosen label")
     local changed
     local key=page:Keybind({Name="Shortcut",Default=enums.KeyCode.G,OnChanged=function(k)changed=k end})
     key._frame.MouseButton1Click:Fire()
     input.InputBegan:Fire({KeyCode=enums.KeyCode.J,UserInputType=enums.UserInputType.Keyboard},false)
     assert(changed==enums.KeyCode.J and w.Open,"Binding J must not hide the window")
     key._frame.MouseButton1Click:Fire();input.WindowFocusReleased:Fire();assert(not w._native.Capturing)
+    local reboundActions=0
+    local binding=page:Keybind({Name="Bind",Default=enums.KeyCode.Q})
+    page:Keybind({Name="Existing",Default=enums.KeyCode.R,Callback=function()reboundActions+=1 end})
+    binding._frame.MouseButton1Click:Fire()
+    input.InputBegan:Fire({KeyCode=enums.KeyCode.R,UserInputType=enums.UserInputType.Keyboard},false)
+    assert(reboundActions==0,"Capturing a key must not trigger another shortcut on the same input event")
+    binding:SetDisabled(true)
+    binding._frame.MouseButton1Click:Fire()
+    assert(not w._native.Capturing,"Disabled shortcut entered capture mode")
+    binding:SetDisabled(false);binding:Destroy()
+    binding._native.Frame.MouseButton1Click:Fire()
+    assert(not w._native.Capturing,"Destroyed shortcut entered capture mode")
     local cancelled=0;w:_listen("Cancel",function()cancelled+=1 end)
     local other=w:Tab({Name="Other",Mode="Tools"})
     other._page.Visible=false
@@ -216,6 +250,46 @@ return function(vendorSource,adapterSource)
     w:Notify({Content="Saved"});assert(#w._toasts==1)
     for _,fn in ipairs(timers)do fn()end;assert(#w._toasts==0)
     w:SetScale(1.25);assert(w.Root:FindFirstChild("KavoScale").Scale==1.25)
+    -- Window drag belongs to one pointer and stops on focus loss/hide.
+    w.Gui.AbsoluteSize=vec(1280,720);w.Root.AbsoluteSize=vec(525,318)
+    w.Root.AnchorPoint=vec(0,0);w.Root.Position=dim(0,100,0,100)
+    local header=w.Root:FindFirstChild("MainHeader")
+    local dragFinger={UserInputType=enums.UserInputType.Touch,Position=vec(100,100)}
+    local intruder={UserInputType=enums.UserInputType.Touch,Position=vec(200,200)}
+    header.InputBegan:Fire(dragFinger);header.InputBegan:Fire(intruder)
+    intruder.Position=vec(900,900);input.InputChanged:Fire(intruder)
+    assert(w.Root.Position.X.Offset==100,"Second finger stole the window drag")
+    dragFinger.Position=vec(5000,5000);input.InputChanged:Fire(dragFinger)
+    assert(w.Root.Position.X.Offset==755 and w.Root.Position.Y.Offset==402,"Window must remain reachable inside screen bounds")
+    input.WindowFocusReleased:Fire()
+    dragFinger.Position=vec(0,0);input.InputChanged:Fire(dragFinger)
+    assert(w.Root.Position.X.Offset==755,"Focus loss left a stuck window drag")
+    header.InputBegan:Fire(dragFinger);w:Toggle(false)
+    dragFinger.Position=vec(300,300);input.InputChanged:Fire(dragFinger)
+    assert(w.Root.Position.X.Offset==755,"Hidden window continued dragging")
+    w:Toggle(true)
+    local inputAPI=load(inputSource)
+    local presses=0
+    inputAPI[enums.KeyCode.P].Pressed:Connect(function()presses+=1 end)
+    local pauseInput={KeyCode=enums.KeyCode.P,UserInputType=enums.UserInputType.Keyboard}
+    input.InputBegan:Fire(pauseInput,false)
+    assert(presses==1,"Default input policy must allow gameplay shortcuts")
+    focused=text._native.TextBox
+    input.InputBegan:Fire(pauseInput,false)
+    assert(presses==1,"Typing must not trigger playback shortcuts")
+    focused=nil
+    inputAPI.ShouldIgnore=function(pressed)return library:IsKeyboardBlocked(pressed)end
+    w:Confirm({Title="Modal"})
+    input.InputBegan:Fire(pauseInput,false)
+    assert(presses==1,"Confirmation must block playback shortcuts")
+    w:_cancel()
+    key._frame.MouseButton1Click:Fire()
+    local capturedPause={KeyCode=enums.KeyCode.P,UserInputType=enums.UserInputType.Keyboard}
+    input.InputBegan:Fire(capturedPause,false)
+    assert(presses==1,"Rebinding must not trigger playback on the capture event")
+    input.InputBegan:Fire({KeyCode=enums.KeyCode.P,UserInputType=enums.UserInputType.Keyboard},false)
+    assert(presses==2,"Normal input must resume after capture")
+    inputAPI:Destroy()
     local inputBefore=input.InputBegan:Count()
     assert(inputBefore>0)
     w.Gui:Destroy()
