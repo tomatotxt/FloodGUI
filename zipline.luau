@@ -289,7 +289,11 @@ local function findRope(ropesTable, startPos)
 	return nil
 end
 
-local function createZiplineController(localPlayer, remotes, trackConnection)
+local function createZiplineController(localPlayer, remotes, trackConnection, envOverrides)
+	local readUpval = (envOverrides and envOverrides.getupvalue) or readUpvalue
+	local writeUpval = (envOverrides and envOverrides.setupvalue) or writeUpvalue
+	local scriptEnvFn = (envOverrides and envOverrides.getsenv) or getScriptEnv
+	local hookFn = (envOverrides and envOverrides.hookfunction) or hookfunction
 	local connections = {}
 	local active = false
 	local enabled = false
@@ -305,7 +309,10 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 	local currentSparklePart = nil
 	local activeSpeed = 40
 	local attachedChar = nil
+	local attachedEnv = nil
 	local originalStartZipline = nil
+	local hookedTrampoline = nil
+	local managedWrapper = nil
 
 	local function track(conn)
 		if not conn then
@@ -332,11 +339,11 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 	end
 
 	local function isZipliningUpvalue(startZiplineFn)
-		if type(readUpvalue) ~= "function" then
+		if type(readUpval) ~= "function" then
 			return false
 		end
 		for i = 1, 5 do
-			local ok, name, val = pcall(readUpvalue, startZiplineFn, i)
+			local ok, name, val = pcall(readUpval, startZiplineFn, i)
 			if ok and type(val) == "boolean" and val == true then
 				return true
 			end
@@ -344,17 +351,44 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		return false
 	end
 
+	local function findBooleanUpvalueIndex(startZiplineFn)
+		if type(readUpval) ~= "function" or type(startZiplineFn) ~= "function" then
+			return nil
+		end
+		local fallbackIdx = nil
+		for i = 1, 5 do
+			local ok, name, val = pcall(readUpval, startZiplineFn, i)
+			if ok and type(val) == "boolean" then
+				if name == "ziplining" or name == "isZiplining" then
+					return i
+				end
+				fallbackIdx = fallbackIdx or i
+			end
+		end
+		return fallbackIdx
+	end
+
+	local function setZipliningUpvalue(startZiplineFn, state)
+		if type(writeUpval) ~= "function" then
+			return
+		end
+		local idx = findBooleanUpvalueIndex(startZiplineFn)
+		if idx then
+			pcall(writeUpval, startZiplineFn, idx, state)
+		end
+	end
+
 	local function findRopeTableUpvalue(startZiplineFn)
-		if type(readUpvalue) ~= "function" then
+		if type(readUpval) ~= "function" then
 			return nil, nil
 		end
 		for i = 1, 20 do
-			local ok, name, val = pcall(readUpvalue, startZiplineFn, i)
+			local ok, name, val = pcall(readUpval, startZiplineFn, i)
 			if ok and type(val) == "table" then
 				return i, val
 			end
 		end
-		return 2, nil
+		return nil, nil
 	end
 
 	local function triggerZipline(ropeModel)
@@ -366,12 +400,12 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 			return
 		end
 		local fe2CharScript = char:FindFirstChild("FE2_Character")
-		if not fe2CharScript or type(getScriptEnv) ~= "function" then
+		if not fe2CharScript or type(scriptEnvFn) ~= "function" then
 			return
 		end
 		local env = nil
 		pcall(function()
-			env = getScriptEnv(fe2CharScript)
+			env = scriptEnvFn(fe2CharScript)
 		end)
 		if not env or type(env.startZipline) ~= "function" then
 			return
@@ -409,9 +443,9 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 					positions = path,
 					length = totalDist,
 				}
-				if ropesTable and type(writeUpvalue) == "function" and upvalueIdx then
+				if ropesTable and type(writeUpval) == "function" and upvalueIdx then
 					table.insert(ropesTable, mockRope)
-					pcall(writeUpvalue, startZipline, upvalueIdx, ropesTable)
+					pcall(writeUpval, startZipline, upvalueIdx, ropesTable)
 					injected = true
 				end
 				foundRope = mockRope
@@ -420,13 +454,13 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 
 		pcall(startZipline, ropeStart)
 
-		if injected and mockRope and ropesTable and type(writeUpvalue) == "function" and upvalueIdx then
+		if injected and mockRope and ropesTable and type(writeUpval) == "function" and upvalueIdx then
 			local duration = ((mockRope.length or 100) / speed) + 2.0
 			task.delay(duration, function()
 				local idx = table.find(ropesTable, mockRope)
 				if idx then
 					table.remove(ropesTable, idx)
-					pcall(writeUpvalue, startZipline, upvalueIdx, ropesTable)
+					pcall(writeUpval, startZipline, upvalueIdx, ropesTable)
 				end
 			end)
 		end
@@ -498,8 +532,8 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		end
 		local char = localPlayer and localPlayer.Character
 		local fe2Char = char and char:FindFirstChild("FE2_Character")
-		if fe2Char and type(getScriptEnv) == "function" then
-			local ok, env = pcall(getScriptEnv, fe2Char)
+		if fe2Char and type(scriptEnvFn) == "function" then
+			local ok, env = pcall(scriptEnvFn, fe2Char)
 			if ok and env and type(env.startZipline) == "function" then
 				return isZipliningUpvalue(env.startZipline)
 			end
@@ -578,7 +612,6 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		if not root then
 			return
 		end
-		activeProgress = math.clamp(progress or 0, 1, 1)
 		activeProgress = math.clamp(progress or 0, 0, 1)
 		local finalCF, segCF, tilt = evaluate(activeRope, activeProgress, lastSegmentCF, activeSwing)
 		lastSegmentCF = segCF
@@ -619,9 +652,7 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 			pcall(function() clMain.ToggleVelocity:Fire(false) end)
 		end
 
-		if originalStartZipline and type(writeUpvalue) == "function" then
-			pcall(writeUpvalue, originalStartZipline, 1, true)
-		end
+		setZipliningUpvalue(hookedTrampoline or originalStartZipline, true)
 	end
 
 	function api.seekPosition(pos, candidateRope)
@@ -705,9 +736,23 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 				end)
 			end
 		end
-		if originalStartZipline and type(writeUpvalue) == "function" then
-			pcall(writeUpvalue, originalStartZipline, 1, false)
+		setZipliningUpvalue(hookedTrampoline or originalStartZipline, false)
+	end
+
+	local function detachAttached()
+		if hookedTrampoline and originalStartZipline and type(hookFn) == "function" then
+			pcall(hookFn, originalStartZipline, hookedTrampoline)
 		end
+		if attachedEnv and originalStartZipline and attachedEnv.startZipline == managedWrapper then
+			pcall(function()
+				attachedEnv.startZipline = originalStartZipline
+			end)
+		end
+		attachedChar = nil
+		attachedEnv = nil
+		originalStartZipline = nil
+		hookedTrampoline = nil
+		managedWrapper = nil
 	end
 
 	-- Interconnect with FE2_Character to make native zipline pauseable mid-run without frame drops
@@ -715,19 +760,26 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 		if not char then
 			return
 		end
+		if attachedChar == char and managedWrapper and attachedEnv and attachedEnv.startZipline == managedWrapper then
+			return
+		end
+		detachAttached()
 		attachedChar = char
 		local fe2Script = char:WaitForChild("FE2_Character", 5)
-		if not fe2Script or type(getScriptEnv) ~= "function" then
+		if not fe2Script or type(scriptEnvFn) ~= "function" then
 			return
 		end
 		local env = nil
 		pcall(function()
-			env = getScriptEnv(fe2Script)
+			env = scriptEnvFn(fe2Script)
 		end)
 		if not env or type(env.startZipline) ~= "function" then
 			return
 		end
-		originalStartZipline = env.startZipline
+		local targetFn = env.startZipline
+		local callOriginal = targetFn
+		originalStartZipline = targetFn
+		attachedEnv = env
 
 		-- Hook / wrap startZipline in FE2_Character environment
 		local function managedStartZipline(ropeStart)
@@ -739,7 +791,8 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 			activeSpeed = math.clamp(tonumber(rawSpeed) or 40, 20, 200)
 
 			local ropesTable = canonicalRopes
-			local upvalueIdx, scriptRopes = findRopeTableUpvalue(originalStartZipline)
+			local upvalueSource = hookedTrampoline or targetFn
+			local upvalueIdx, scriptRopes = findRopeTableUpvalue(upvalueSource)
 			ropesTable = scriptRopes or ropesTable
 
 			local found = findRope(ropesTable, ropeStart.Position)
@@ -747,9 +800,9 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 				local geom, dist = reconstructRopeGeometry(ropeModel)
 				if geom and #geom > 1 then
 					found = { positions = geom, length = dist }
-					if ropesTable and type(writeUpvalue) == "function" and upvalueIdx then
+					if ropesTable and type(writeUpval) == "function" and upvalueIdx then
 						table.insert(ropesTable, found)
-						pcall(writeUpvalue, originalStartZipline, upvalueIdx, ropesTable)
+						pcall(writeUpval, upvalueSource, upvalueIdx, ropesTable)
 					end
 				end
 			end
@@ -760,21 +813,25 @@ local function createZiplineController(localPlayer, remotes, trackConnection)
 				lastSegmentCF = nil
 			end
 
-			-- Invoke native zipline logic
-			originalStartZipline(ropeStart)
+			-- Invoke unhooked native zipline logic (trampoline when hookfunction is active)
+			return callOriginal(ropeStart)
 		end
 
-		env.startZipline = managedStartZipline
-		pcall(function()
-			if type(hookfunction) == "function" then
-				hookfunction(originalStartZipline, managedStartZipline)
+		managedWrapper = managedStartZipline
+		if type(hookFn) == "function" then
+			local ok, trampoline = pcall(hookFn, targetFn, managedStartZipline)
+			if ok and type(trampoline) == "function" then
+				callOriginal = trampoline
+				hookedTrampoline = trampoline
 			end
-		end)
+		end
+		env.startZipline = managedStartZipline
 	end
 
 	function api.destroy()
 		enabled = false
 		api.cancel()
+		detachAttached()
 		for _, conn in ipairs(connections) do
 			if conn and conn.Disconnect then
 				pcall(function()

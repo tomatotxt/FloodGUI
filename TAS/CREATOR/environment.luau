@@ -65,8 +65,11 @@ function Environment.capture(source, getId, now, track, options)
         -- internal instance references when it clones the hierarchy together.
         for _,node in ipairs(originals) do
             if isCloneable(node) then identity(node) end
-            originalArchivable[node]=node.Archivable
-            node.Archivable=true
+            local okArch, arch = pcall(function() return node.Archivable end)
+            if okArch then
+                originalArchivable[node]=arch
+                pcall(function() node.Archivable=true end)
+            end
         end
         if options.cloneRoot then cloned=options.cloneRoot(source) else cloned=source:Clone() end
     end)
@@ -162,7 +165,12 @@ function Environment.capture(source, getId, now, track, options)
             parent=nil
         end)
     end
-    for _,node in ipairs(originals) do ensure(node) end
+    for _,node in ipairs(originals) do
+        if isCloneable(node) then
+            local target=state.objects[identity(node)]
+            if target then watch(node,target) end
+        end
+    end
     connect(source.DescendantAdded,function(node)
         if state.recording and isCloneable(node) then ensure(node) end
     end)

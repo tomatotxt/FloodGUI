@@ -1,6 +1,9 @@
 local Integrity = require("../integrity")
 
--- Test fnv1a hashing
+-- Test fnv1a hashing (including official 32-bit FNV-1a test vectors to verify zero float64 precision loss)
+assert(Integrity.hash("") == "811c9dc5", "FNV-1a empty string vector mismatch")
+assert(Integrity.hash("a") == "e40c292c", "FNV-1a 'a' vector mismatch")
+assert(Integrity.hash("foobar") == "bf9cf968", "FNV-1a 'foobar' vector mismatch")
 local h1 = Integrity.hash("hello world")
 local h2 = Integrity.hash("hello world")
 local h3 = Integrity.hash("hello world!")
@@ -83,5 +86,29 @@ assert(#res3.updated == 1)
 assert(res3.updated[1].name == "advanced")
 assert(#alerts == 1)
 assert(alerts[1].msg == "advanced Updated!" and alerts[1].level == "Warning")
+
+-- Fourth run: transient read failure must preserve previous hash (no spurious New Module on recovery)
+mockRuntime.read = function(rel)
+	if rel == "rejoin.luau" then
+		error("transient network timeout")
+	end
+	if rel == "advanced.luau" then
+		return "MODIFIED content of advanced.luau"
+	end
+	return "content of " .. rel
+end
+alerts = {}
+local ok4, res4 = Integrity.check(mockRuntime, mockHttp, mockAlert)
+assert(ok4 and #res4.updated == 0 and #res4.new == 0 and #alerts == 0)
+
+mockRuntime.read = function(rel)
+	if rel == "advanced.luau" then
+		return "MODIFIED content of advanced.luau"
+	end
+	return "content of " .. rel
+end
+alerts = {}
+local ok5, res5 = Integrity.check(mockRuntime, mockHttp, mockAlert)
+assert(ok5 and #res5.updated == 0 and #res5.new == 0 and #alerts == 0, "Recovered module must not be misreported as New Module")
 
 print("PASS: module integrity hashing, first-run workspace saving, and update alerts")

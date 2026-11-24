@@ -4,20 +4,21 @@
 
 local Integrity = {}
 
--- FNV-1a 32-bit hash function (fast, deterministic, zero-dependency)
+-- FNV-1a 32-bit hash function (exact 32-bit math without float64 mantissa overflow)
+-- 16777619 == 0x01000193 == (1 << 24) + 403; max intermediate <= 1.735e12 << 2^53.
 local function fnv1a(str: string): string
 	local hash = 2166136261
 	for i = 1, #str do
 		local b = string.byte(str, i)
 		hash = bit32.bxor(hash, b)
-		hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
+		hash = (hash * 403 + bit32.lshift(hash, 24)) % 4294967296
 	end
 	return string.format("%08x", hash)
 end
 
 Integrity.hash = fnv1a
 
--- List of core project scripts and modules to track
+-- List of active project scripts and modules to track
 Integrity.TRACKED_MODULES = {
 	"FloodGUI.luau",
 	"advanced.luau",
@@ -26,6 +27,7 @@ Integrity.TRACKED_MODULES = {
 	"compat.luau",
 	"feature-guard.luau",
 	"gamestate.luau",
+	"integrity.luau",
 	"launches.luau",
 	"loader.lua",
 	"minigui.luau",
@@ -52,7 +54,6 @@ Integrity.TRACKED_MODULES = {
 	"ui/player.luau",
 	"ui/recordings.luau",
 	"ui/service.luau",
-	"vendor/airflow.luau",
 	"vendor/input.luau",
 	"vendor/kavo.luau",
 }
@@ -60,7 +61,7 @@ Integrity.TRACKED_MODULES = {
 -- Checks tracked modules against the persistent hash store in workspace.
 -- On first run: creates the hash store.
 -- On subsequent runs: compares hashes, alerts for any updated modules, and updates the file.
-function Integrity.check(runtime, httpService, alertFn)
+function Integrity.check(runtime, httpService, alertFn, session)
 	local isfile = getfenv().isfile
 	local readfile = getfenv().readfile
 	local writefile = getfenv().writefile
@@ -91,6 +92,9 @@ function Integrity.check(runtime, httpService, alertFn)
 	local newModules = {}
 
 	for _, modulePath in ipairs(Integrity.TRACKED_MODULES) do
+		if session and session.Cancelled then
+			return false, "Session cancelled"
+		end
 		local ok, source = pcall(function()
 			return runtime.read(modulePath)
 		end)
@@ -108,6 +112,9 @@ function Integrity.check(runtime, httpService, alertFn)
 					table.insert(newModules, { path = modulePath, name = moduleName })
 				end
 			end
+		elseif not isFirstRun and previousHashes[modulePath] ~= nil then
+			-- Preserve previous hash across transient network/IO hiccups so next run doesn't falsely report New Module.
+			currentHashes[modulePath] = previousHashes[modulePath]
 		end
 	end
 

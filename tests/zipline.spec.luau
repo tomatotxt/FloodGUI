@@ -49,6 +49,19 @@ if not CFrame then
 	getfenv().CFrame = CF
 end
 
+local mockScriptEnvs = {}
+local hookForwarders = {}
+local mockHooks = {
+	getsenv = function(scr)
+		return mockScriptEnvs[scr]
+	end,
+	hookfunction = function(target, replacement)
+		local currentImpl = hookForwarders[target] or error("Unknown hook target")
+		hookForwarders[target] = replacement
+		return currentImpl
+	end,
+}
+
 local createZipline = require("../zipline")
 
 local mockPlayer = { Character = nil }
@@ -57,7 +70,7 @@ local mockRemotes = {
 		return nil
 	end,
 }
-local zip = createZipline(mockPlayer, mockRemotes)
+local zip = createZipline(mockPlayer, mockRemotes, nil, mockHooks)
 
 -- 1. Test getEndpoints geometry
 local mockPart = {
@@ -218,12 +231,41 @@ assert(not mockHRP.Anchored, "HumanoidRootPart should be unanchored when resumed
 zip.cancel()
 assert(not zip.isZiplining(), "Should not be ziplining after cancel")
 
--- 7. Test API lifecycle
+-- 7. Test API lifecycle & hookfunction trampoline safety (no infinite recursion, clean restore)
+local nativeCalls = 0
+local nativeZiplineProxy
+local function rawStartZipline(part)
+	nativeCalls += 1
+	assert(part == ropeStart, "Expected ropeStart passed to native startZipline")
+	return "started"
+end
+nativeZiplineProxy = function(...)
+	return hookForwarders[nativeZiplineProxy](...)
+end
+hookForwarders[nativeZiplineProxy] = rawStartZipline
+
+local mockFE2Script = { Name = "FE2_Character" }
+local mockCharEnv = { startZipline = nativeZiplineProxy }
+mockScriptEnvs[mockFE2Script] = mockCharEnv
+mockChar.WaitForChild = function(_, name)
+	if name == "FE2_Character" then return mockFE2Script end
+	return nil
+end
+
+zip.attach(mockChar)
+assert(mockCharEnv.startZipline ~= nativeZiplineProxy, "attach should wrap env.startZipline")
+-- Calling via the hooked function pointer (simulating internal FE2 caller) must not infinitely recurse
+local res = nativeZiplineProxy(ropeStart)
+assert(res == "started" and nativeCalls == 1, "Hooked startZipline must invoke original exactly once without recursion")
+assert(zip.isZiplining(), "Managed startZipline must capture activeRope")
+
 assert(not zip.isEnabled(), "Should be disabled by default")
 zip.setEnabled(true)
 assert(zip.isEnabled(), "Should be enabled after setEnabled(true)")
 zip.check()
 zip.destroy()
 assert(not zip.isEnabled(), "Should be disabled after destroy")
+assert(mockCharEnv.startZipline == nativeZiplineProxy, "destroy must restore env.startZipline")
+assert(hookForwarders[nativeZiplineProxy] == rawStartZipline, "destroy must unhook native startZipline")
 
 print("PASS: FE2 zipline trajectory reconstruction, endpoint calculation, and native lifecycle")

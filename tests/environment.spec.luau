@@ -122,4 +122,39 @@ light.seek(0);assert(lighting.ClockTime==8 and light.objects[id(bloom)].Parent==
 light.dispose();assert(lighting.Name=="Lighting")
 local TimelineBinding=require("../TAS/CREATOR/timelines")
 assert(TimelineBinding.bind()==false,"Editor must not dispatch native, uncancellable player actions")
+
+-- Timeline seek must fire Alert once on forward crossing, never spam per-frame, and never fire while rewinding.
+getfenv().Color3=Color3 or {fromRGB=function(r,g,b)return {r,g,b}end}
+local tlMap=object("Model","Map")
+local tlConfig=object("Configuration","Timeline1")
+tlConfig:SetAttribute("LocalTrigger_Touch","Trigger1")
+tlConfig:SetAttribute("Trigger_Delay",0.5)
+tlConfig.Parent=tlMap
+local xfNode=object("ObjectValue","AlertFrame")
+xfNode:SetAttribute("XFrame_Function","Alert")
+xfNode:SetAttribute("XFrame_Timestamp",1.5)
+xfNode:SetAttribute("Message","Door Opening!")
+xfNode.Parent=tlConfig
+local tlAlerts=0
+local tlPlayer=TimelineBinding.createPlayer(tlMap,function(msg)
+    assert(msg=="Door Opening!")
+    tlAlerts+=1
+end)
+assert(#tlPlayer.timelines==1)
+assert(tlPlayer.trigger(tlConfig,1.0)==true)
+tlPlayer.seek(2.9) -- elapsed 1.9 < 2.0 (delay 0.5 + ts 1.5)
+assert(tlAlerts==0)
+tlPlayer.seek(3.05) -- elapsed 2.05 >= 2.0: fires once
+assert(tlAlerts==1,"Timeline alert must fire when crossing timestamp")
+tlPlayer.seek(3.08) -- still within 0.2s window on next frame: must NOT spam
+tlPlayer.seek(3.12)
+assert(tlAlerts==1,"Timeline alert must not spam on subsequent forward frames")
+tlPlayer.seek(3.06) -- rewinding inside the 0.2s window: must NOT fire
+assert(tlAlerts==1,"Timeline alert must not fire while rewinding")
+tlPlayer.seek(2.5) -- rewound before actionTime (elapsed 1.5 < 2.0)
+tlPlayer.seek(3.05) -- crossing forward again: fires cleanly once
+assert(tlAlerts==2,"Timeline alert must fire again after rewinding prior to actionTime")
+tlPlayer.seek(0.5) -- rewound before trigger time (1.0)
+assert(tlPlayer.timelines[1].TriggeredTime==nil,"Rewinding before trigger time must reset TriggeredTime")
+
 print("PASS: created/removed/reparented map objects, reversible properties/attributes, timed lighting and isolated timeline policy")

@@ -40,7 +40,6 @@ end
 local SessionConnections = {}
 getgenv().FloodGUI_Connections = SessionConnections
 getgenv().TomatoConnections = getgenv().FloodGUI_Connections -- Aliased for clean environment overrides
-getgenv().TasFileCache = {}
 getgenv().TomatoAutoFarm = false
 getgenv().IsTASPlaying = false
 
@@ -213,9 +212,18 @@ end
 
 local function LoadExternalScript(url)
     local success, response = pcall(function() return game:HttpGet(url) end)
-    if success and response then
-        local func = loadstring(response)
-        if func then func() end
+    if not success or type(response) ~= "string" or response == "" then
+        Alert("Failed to download external script: " .. tostring(response), "Error")
+        return
+    end
+    local func, compileErr = loadstring(response)
+    if not func then
+        Alert("Failed to compile external script: " .. tostring(compileErr), "Error")
+        return
+    end
+    local runOk, runErr = pcall(func)
+    if not runOk then
+        Alert("External script error: " .. tostring(runErr), "Error")
     end
 end
 
@@ -353,17 +361,6 @@ local function ExecuteSecondaryScript(modeType)
         local ok, err = pcall(Runtime.runScoped, isCurrent, CONFIG.TAS_PLAYER_PATH, isCurrent, own)
         if not ok and isCurrent() then Launches.cancel("player");error(err) end
     end
-end
-
-local function GetRandomPointInPart(Part)
-    local Size = Part.Size
-    local CFramePos = Part.CFrame
-
-    local Rx = (math.random() - 0.5) * (Size.X * 0.9)
-    local Ry = (math.random() - 0.5) * (Size.Y * 0.9)
-    local Rz = (math.random() - 0.5) * (Size.Z * 0.9)
-
-    return CFramePos * CFrame.new(Rx, Ry, Rz)
 end
 
 -- ==============================================================================
@@ -758,8 +755,11 @@ end))
 -- Native FE2 swimming query, shared with the creator and scoped to this session.
 local NativeSwim = Runtime.run("swimming.luau")(LocalPlayer, RunService.Heartbeat)
 Runtime.NativeSwim = NativeSwim
--- Retain a disposer even if later UI loading fails before full cleanup is installed.
-Session.Cleanup = NativeSwim.destroy
+-- Retain both disposers even if later UI loading fails before full cleanup is installed.
+Session.Cleanup = function()
+    if Advanced and Advanced.cleanup then pcall(Advanced.cleanup) end
+    NativeSwim.destroy()
+end
 NativeSwim.override(function()
     if not Session.Cancelled and not getgenv().TAS_Active and not getgenv().IsTASPlaying and State.SwimEnabled then
         return true
@@ -767,7 +767,7 @@ NativeSwim.override(function()
 end)
 
 -- ==============================================================================
--- [9] AIRFLOW USER INTERFACE
+-- [9] KAVO USER INTERFACE
 -- ==============================================================================
 UI = Runtime.run("ui/service.luau")
 local Preferences = Runtime.run("preferences.luau")(Runtime, HttpService)
@@ -800,7 +800,6 @@ local function StopAutomation()
     Advanced.cleanup()
     Alert("Automation stopped.", "Info")
 end
-local previousCleanup = Session.Cleanup
 Session.Cleanup = function()
     if Session.Cleaned then return end
     Session.Cleaned = true
@@ -814,7 +813,7 @@ Session.Cleanup = function()
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth, State.Noclip, State.SwimEnabled = false, false, false, false
     getgenv().TomatoAutoFarm = false
-    if previousCleanup then pcall(previousCleanup) end
+    if Advanced and Advanced.cleanup then pcall(Advanced.cleanup) end
     if stopPlayer then pcall(stopPlayer, false) end
     if stopCreator then pcall(stopCreator) end
     for _, connection in ipairs(SessionConnections) do pcall(function() connection:Disconnect() end) end
@@ -843,7 +842,12 @@ local Interface = Runtime.run("ui/main.luau")({
 })
 getgenv().FloodGUIInterface = Interface
 local Integrity = Runtime.run("integrity.luau")
-pcall(function()
-    Integrity.check(Runtime, HttpService, Alert)
+task.spawn(function()
+    if Session.Cancelled then return end
+    pcall(function()
+        Integrity.check(Runtime, HttpService, function(msg, level)
+            if not Session.Cancelled then Alert(msg, level) end
+        end, Session)
+    end)
 end)
 Alert("FloodGUI is ready.", "Success")

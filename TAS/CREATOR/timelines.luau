@@ -63,6 +63,7 @@ function Timelines.createPlayer(mapInstance, alertFn)
 						Frames = frames,
 						TriggeredTime = nil,
 						TriggerPart = nil,
+						FiredAlerts = {},
 					})
 				end
 			end
@@ -71,24 +72,34 @@ function Timelines.createPlayer(mapInstance, alertFn)
 
 	-- Seek / synchronization function called whenever editor clock changes
 	function state.seek(targetTime)
+		local prevTime = state.lastTime
 		state.lastTime = targetTime
+		local advancing = targetTime >= prevTime
 		for _, tl in ipairs(state.timelines) do
 			if tl.TriggeredTime ~= nil then
 				local elapsedSinceTrigger = targetTime - tl.TriggeredTime
+				local prevElapsed = prevTime - tl.TriggeredTime
 				if elapsedSinceTrigger < 0 then
 					-- Rewound before trigger point
 					tl.TriggeredTime = nil
+					table.clear(tl.FiredAlerts)
 				else
-					-- Check actions that fall within time window
 					for _, xf in ipairs(tl.Frames) do
 						local actionTime = tl.Delay + xf.Timestamp
-						if elapsedSinceTrigger >= actionTime and (targetTime - state.lastTime) >= 0 then
-							-- Action is active in forward progression
-							if xf.Function == "Alert" and alertFn and elapsedSinceTrigger - actionTime < 0.2 then
-								local msg = xf.Attributes.Message
-								local col = xf.Attributes.Color
-								if msg then
-									pcall(alertFn, tostring(msg), typeof(col) == "Color3" and col or Color3.fromRGB(0, 255, 255))
+						if elapsedSinceTrigger < actionTime then
+							-- Rewound prior to this action's timestamp; allow it to fire again forward
+							tl.FiredAlerts[xf] = nil
+						elseif advancing and not tl.FiredAlerts[xf] then
+							-- Action crossed in forward progression: fire once within window
+							if xf.Function == "Alert" and alertFn and (prevElapsed <= actionTime or elapsedSinceTrigger - actionTime < 0.2) then
+								tl.FiredAlerts[xf] = true
+								if elapsedSinceTrigger - actionTime < 0.2 then
+									local msg = xf.Attributes.Message
+									local col = xf.Attributes.Color
+									if msg then
+										local alertColor = typeof(col) == "Color3" and col or (Color3 and Color3.fromRGB(0, 255, 255) or nil)
+										pcall(alertFn, tostring(msg), alertColor)
+									end
 								end
 							end
 						end
@@ -102,6 +113,7 @@ function Timelines.createPlayer(mapInstance, alertFn)
 		for _, tl in ipairs(state.timelines) do
 			if (tl.TriggerPart == timelineOrPart or tl.Config == timelineOrPart) and not tl.TriggeredTime then
 				tl.TriggeredTime = realTime
+				table.clear(tl.FiredAlerts)
 				return true
 			end
 		end

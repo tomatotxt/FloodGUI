@@ -121,10 +121,11 @@ function UI.label(tab, text)
 	return tab:Label({ Text = text })._frame
 end
 
+local touchControls
 function UI.hold(tab, name, description, press, release, track)
 	local control = tab:Button({ Name = name, Desc = description, Icon = "hand" })
-	local touch = Runtime.run("TAS/CREATOR/touch-controls.luau")
-	local stop = touch.bindHold(control._frame, game:GetService("UserInputService"), function()
+	touchControls = touchControls or Runtime.run("TAS/CREATOR/touch-controls.luau")
+	local stop = touchControls.bindHold(control._frame, game:GetService("UserInputService"), function()
 		if not control._disabled and not control._destroyed and tab.Window.Open and not tab.Window._destroyed then
 			press()
 		end

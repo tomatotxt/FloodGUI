@@ -52,9 +52,28 @@ return function(source)
     env.Runtime={runScoped=function()root.CFrame="editor"end}
     env.CONFIG={TAS_CREATOR_PATH="creator"}
     env.Noclip=function()end
-    local execute=compile(section("local function ExecuteSecondaryScript(modeType)","local function GetRandomPointInPart").."\nreturn ExecuteSecondaryScript")
+    local execute=compile(section("local function ExecuteSecondaryScript(modeType)","-- [5] CUSTOM TAS FILE MANAGER").."\nreturn ExecuteSecondaryScript")
     execute("Record")
     assert(not env.State.AutoCollect and not env.State.AutoPlay and not env.State.AutoFarm)
     assert(coroutine.resume(collecting) and coroutine.status(collecting)=="dead" and root.CFrame=="editor","Old collection wrote after creator acquired motion")
+
+    -- Both early and full Session.Cleanup must invoke Advanced.cleanup and NativeSwim.destroy.
+    local advancedCleaned, swimDestroyed, uiDestroyed = 0, 0, 0
+    env.Advanced={cleanup=function()advancedCleaned+=1 end}
+    env.NativeSwim={destroy=function()swimDestroyed+=1 end}
+    env.NativeZipline={destroy=function()end}
+    env.GameState={destroy=function()end}
+    env.UI={destroy=function()uiDestroyed+=1 end}
+    env.Preferences={save=function()return true end}
+    env.preferencesDirty=false
+    env.SessionConnections={}
+    compile(section("-- Retain both disposers","NativeSwim.override"))
+    env.Session.Cleanup()
+    assert(advancedCleaned==1 and swimDestroyed==1,"Early Session.Cleanup must clean up both Advanced and NativeSwim")
+    compile(section("local function StopAutomation()","local Interface = Runtime.run"))
+    env.Session.Cleanup()
+    assert(advancedCleaned==2 and swimDestroyed==2 and uiDestroyed==1,"Full Session.Cleanup must clean up Advanced hooks, NativeSwim, and UI")
+    env.Session.Cleanup()
+    assert(advancedCleaned==2 and swimDestroyed==2,"Session.Cleanup must be idempotent")
     print("PASS: actual main startup defaults, movement ownership, selected Farm flow and collection-to-creator handoff")
 end
