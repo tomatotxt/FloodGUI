@@ -18,8 +18,10 @@ local properties = {
 function Environment.apply(event, forward)
     local value
     if forward then value=event.NewVal else value=event.OldVal end
-    if event.Attribute then event.Instance:SetAttribute(event.Prop, value)
-    else event.Instance[event.Prop]=value end
+    pcall(function()
+        if event.Attribute then event.Instance:SetAttribute(event.Prop, value)
+        else event.Instance[event.Prop]=value end
+    end)
 end
 function Environment.seek(state, target)
     while state.cursor<=#state.events and state.events[state.cursor].Time<=target do

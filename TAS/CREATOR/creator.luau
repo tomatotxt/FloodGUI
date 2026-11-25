@@ -14,7 +14,7 @@ local Timeline = Runtime.run("TAS/PLAYER/timeline.luau")
 local Buffer = Runtime.run("TAS/CREATOR/recording-buffer.luau")
 local Environment = Runtime.run("TAS/CREATOR/environment.luau")
 local ZiplineModule = Runtime.run("zipline.luau")
-local ZiplineAssistant = ZiplineModule(LocalPlayer, game:GetService("ReplicatedStorage"):FindFirstChild("Remote"), AddConnection)
+local ZiplineAssistant
 local CharacterOverrides = Runtime.run("overrides.luau")()
 Own(CharacterOverrides.restoreAll)
 local UI_API_PATH = "ui/creator.luau"
@@ -226,6 +226,11 @@ local function AddConnection(con)
     Own(function() con:Disconnect() end)
     return con
 end
+
+ZiplineAssistant = ZiplineModule(LocalPlayer, ReplicatedStorage:FindFirstChild("Remote"), AddConnection)
+Own(function()
+    if ZiplineAssistant and ZiplineAssistant.destroy then ZiplineAssistant.destroy() end
+end)
 
 local function isRandomString(str)
     if #str == 0 then return false end
@@ -753,16 +758,34 @@ function TogglePause()
         end
 end
 
+local IsTASSliding = false
+local function ToggleTASSlide(val)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if val then
+        if hrp then hrp.Size = Vector3.new(2, 1, 1) end
+        if hum then hum.HipHeight = -1.5 end
+    else
+        if hrp then hrp.Size = Vector3.new(2, 2, 1) end
+        if hum then hum.HipHeight = 0 end
+    end
+end
+
 function LoadLastSavestate()
     if Stopped or IsViewingTAS or StepInProgress then return end
     local LastState = Savestates[#Savestates]
     if LastState then
         local FramePacked = LastState[#LastState]
         if not FramePacked then return end
+        local char = LocalPlayer.Character
+        local Root = char and char:FindFirstChild("HumanoidRootPart")
+        local Hum = char and (char:FindFirstChildOfClass("Humanoid") or char:FindFirstChild("Humanoid"))
+        if not Root then return end
         local Frame = UnpackFrame(FramePacked)
 
         Frames = {}; IsPaused = true; PreviewOffset = 0
-        local Root = LocalPlayer.Character.HumanoidRootPart
         Root.Anchored = true; Root.CFrame = Frame.CFrame + Vector3.new(MapX, MapY - 1000, MapZ)
         Root.Velocity = Frame.Velocity; SavedVelocity = Frame.Velocity
 
@@ -778,7 +801,7 @@ function LoadLastSavestate()
 
         SyncButtonState(Frame.Time, Frame.Time); UpdateMapState(Frame.Time)
 
-        OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid)
+        if Hum then OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], Hum) end
         local animSpd = Frame.Animation[2] or (Frame.Animation[1] == "walk" and 0.76 or 1)
         if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then AnimEnv.setAnimationSpeed(animSpd) end
         CurrentAnim = {Frame.Animation[1], animSpd}
@@ -1201,13 +1224,15 @@ end
 
 function RewindFrame()
     if Stopped or IsViewingTAS or StepInProgress then return end
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+    local char = LocalPlayer.Character
+    local Root = char and char:FindFirstChild("HumanoidRootPart")
+    if Root then
+        local Hum = char:FindFirstChildOfClass("Humanoid") or char:FindFirstChild("Humanoid")
         local FramePacked
         Frames, FramePacked = Buffer.rewind(Savestates, Frames)
         if FramePacked then
             local Frame = UnpackFrame(FramePacked)
             if not IsPaused then TogglePause() end
-            local Root = LocalPlayer.Character.HumanoidRootPart
             Root.CFrame = Frame.CFrame + Vector3.new(MapX, MapY - 1000, MapZ)
             Root.Velocity = Frame.Velocity; SavedVelocity = Frame.Velocity
             workspace.CurrentCamera.CFrame = Frame.CameraCFrame
@@ -1220,11 +1245,12 @@ function RewindFrame()
                 ZiplineAssistant.cancel()
             end
 
+            if Frame.Time + PreviewOffset < 0 then PreviewOffset = -Frame.Time end
             local VisualTime = Frame.Time + PreviewOffset
             SyncButtonState(VisualTime, Frame.Time); UpdateMapState(VisualTime)
 
             if Frame.Animation[1] then
-                OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], LocalPlayer.Character.Humanoid)
+                if Hum then OriginalPlayAnim(Frame.Animation[1], Frame.Animation[2], Hum) end
                 local animSpd = Frame.Animation[2] or (Frame.Animation[1] == "walk" and 0.76 or 1)
                 if AnimEnv and type(AnimEnv.setAnimationSpeed) == "function" then AnimEnv.setAnimationSpeed(animSpd) end
                 CurrentAnim = {Frame.Animation[1], animSpd}
@@ -1239,24 +1265,23 @@ function RewindFrame()
 end
 
 function RewindLoop()
-    if IsAdvancingFrame then return end
+    if IsRewinding or IsAdvancingFrame then return end
     IsRewinding = true; SendAlert("Rewinding...", Color3.fromRGB(255, 0, 0))
-    RewindFrame(); while task.wait(0.05) and IsRewinding and not Stopped do RewindFrame() end
-end
-
--- // VIEW TAS (IMPROVED PLAYER LOGIC) //
-local IsTASSliding = false
-local function ToggleTASSlide(val)
-    if not LocalPlayer.Character then return end
-    if val then
-        if LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.Size = Vector3.new(2, 1, 1) end
-        if LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.HipHeight = -1.5 end
-    else
-        if LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1) end
-        if LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.HipHeight = 0 end
+    local ok, err = pcall(function()
+        RewindFrame()
+        while IsRewinding and not Stopped and getgenv().TAS_Active do
+            RunService.Heartbeat:Wait()
+            if not IsRewinding or Stopped then break end
+            RewindFrame()
+        end
+    end)
+    IsRewinding = false
+    if not ok then
+        SendAlert("Rewind stopped: " .. tostring(err), Color3.fromRGB(255, 106, 96))
     end
 end
 
+-- // VIEW TAS (IMPROVED PLAYER LOGIC) //
 local LastTASAnim = nil
 local function ActivateTASAnimation(AnimData, frameSliding, frameSwimming)
     if not LocalPlayer.Character then return end
@@ -1603,13 +1628,17 @@ local HBCon = RunService.Heartbeat:Connect(function(dt)
     local character = LocalPlayer.Character
     if not character or not character:FindFirstChild("HumanoidRootPart") or not workspace.CurrentCamera then return end
 
-    if IsPreviewingForward then PreviewOffset = PreviewOffset + (dt * 5) end
-    if IsPreviewingBackward then PreviewOffset = PreviewOffset - (dt * 5) end
-
     local RealTime = 0
     if not IsPaused then RealTime = os.clock() - RunStart - TimeOffset else RealTime = (PauseStart or os.clock()) - RunStart - TimeOffset end
+    if RealTime < 0 then RealTime = 0 end
 
-    local VisualTime = RealTime + PreviewOffset; if VisualTime < 0 then VisualTime = 0 end
+    if IsPreviewingForward then PreviewOffset = PreviewOffset + (dt * 5) end
+    if IsPreviewingBackward then PreviewOffset = PreviewOffset - (dt * 5) end
+    if RealTime + PreviewOffset < 0 then
+        PreviewOffset = -RealTime
+    end
+
+    local VisualTime = RealTime + PreviewOffset
 
     UpdateMapState(VisualTime); SyncButtonState(VisualTime, RealTime); UpdateTimeDisplay(VisualTime)
 

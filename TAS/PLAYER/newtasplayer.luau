@@ -254,6 +254,7 @@ local IsCurrentlyZiplining = false
 -- Manual Key Holding Overrides
 local IsManualZipline = false
 local IsManualSlide = false
+local OriginalStartZipline = nil
 
 -- // CLEANUP & AUTO-QUEUE //
 local LiftCheckPos = Vector3.new(-25, -144, 139)
@@ -477,7 +478,7 @@ while (RootPart.Anchored == true) or (Humanoid.WalkSpeed <= 0) do
     task.wait()
 end
 
-local OriginalStartZipline = nil
+OriginalStartZipline = nil
 if LP.Character and LP.Character:FindFirstChild("Humanoid") then
     PlaybackHumanoid = LP.Character.Humanoid
     OriginalAutoRotate = PlaybackHumanoid.AutoRotate

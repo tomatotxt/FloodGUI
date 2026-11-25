@@ -129,6 +129,71 @@ return function(creatorSource, playerSource)
     assert(not environment.IsViewingTAS and environment.StopPreview==nil and disconnected,"Frame failure left preview running")
     character.FindFirstChild=function()return nil end
     assert(not pcall(preview,{{time=0}}) and not environment.IsViewingTAS,"Missing character acquired preview state")
+
+    -- RewindFrame / RewindLoop must resolve ToggleTASSlide in lexical scope without nil errors,
+    -- and Down-arrow visual rewind must clamp PreviewOffset at -RealTime so Up-arrow responds immediately.
+    environment.Stopped=false
+    environment.IsViewingTAS=false
+    environment.StepInProgress=false
+    environment.IsPaused=true
+    environment.IsRewinding=false
+    environment.IsAdvancingFrame=false
+    environment.PreviewOffset=0
+    environment.RunStart=0
+    environment.PauseStart=2.0
+    environment.TimeOffset=0
+    environment.MapX,environment.MapY,environment.MapZ=0,1000,0
+    character.FindFirstChild=function(_,name)
+        if name=="HumanoidRootPart" then return root end
+        if name=="Humanoid" then return humanoid end
+        return nil
+    end
+    character.Humanoid=humanoid
+    environment.Buffer={rewind=function(states,frames)
+        table.remove(frames)
+        return frames,frames[#frames]
+    end}
+    environment.UnpackFrame=function(packed)
+        return {Time=packed,CFrame="pose-"..tostring(packed),Velocity="vel",CameraCFrame="cam",Animation={"slide",1},Sliding=true,Swimming=false}
+    end
+    environment.CFrame={new=function()return 0 end}
+    setmetatable(root,{})
+    root.CFrame="pose"
+    local origSub
+    environment.Vector3={new=function(x,y,z)return {x=x,y=y,z=z}end}
+    -- Use numeric mock CFrame so Frame.CFrame + Vector3 works cleanly
+    environment.UnpackFrame=function(packed)
+        return {Time=packed,CFrame=packed,Velocity="vel",CameraCFrame="cam",Animation={"slide",1},Sliding=true,Swimming=false}
+    end
+    environment.Vector3={new=function()return 0 end}
+    environment.UpdateTimeDisplay=function()end
+    environment.task={spawn=function(fn)fn()end}
+    environment.Savestates={{0.5}}
+    environment.Frames={1.0,1.5}
+    local rewindChunk = functionSource(creatorSource,"ToggleTASSlide",true)
+        .. "\n" .. functionSource(creatorSource,"RewindFrame",false)
+        .. "\n" .. functionSource(creatorSource,"RewindLoop",false)
+    compile(rewindChunk)
+    local rwSteps=0
+    environment.RunService.Heartbeat.Wait=function()
+        rwSteps+=1
+        if rwSteps>=2 then environment.IsRewinding=false end
+    end
+    environment.RewindLoop()
+    assert(not environment.IsRewinding and rwSteps==2 and #environment.Frames==0,"Held rewind failed or did not drain frames")
+    assert(humanoid.HipHeight==-1.5,"ToggleTASSlide was not applied during RewindFrame")
+
+    -- Verify Down-arrow PreviewOffset clamps at -RealTime (0:00.000) with zero Up-arrow lag
+    local visualSlice = section(creatorSource,"    local RealTime = 0","    UpdateMapState(VisualTime)")
+    local stepVisual = compile("return function(dt)\n"..visualSlice.."    return VisualTime, PreviewOffset\nend")
+    environment.IsPaused=true; environment.RunStart=0; environment.PauseStart=1.0; environment.TimeOffset=0
+    environment.PreviewOffset=0; environment.IsPreviewingBackward=true; environment.IsPreviewingForward=false
+    local vt, po = stepVisual(1.0) -- -5.0s step from RealTime=1.0s
+    assert(vt==0 and po==-1.0,"PreviewOffset underflowed past 0:00.000 instead of clamping at -RealTime")
+    environment.IsPreviewingBackward=false; environment.IsPreviewingForward=true
+    local vtUp = stepVisual(0.1)
+    assert(vtUp > 0.49,"Up-arrow delayed after hitting 0:00.000")
+
     print("PASS: actual TAS held frame advance, cancellation, and immediate reversible player pause")
     print("PASS: actual creator preview setup/frame failure rollback, dependency loss and original environment restoration")
 end
