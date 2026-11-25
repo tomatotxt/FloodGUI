@@ -99,7 +99,7 @@ function Library:Window(options)
     end
     connect(input.InputBegan,function(pressed,processed)
         if processed or Library:IsKeyboardBlocked(pressed) or input:GetFocusedTextBox()then return end
-        if pressed.KeyCode==window._key then window:Toggle()end
+        if pressed.UserInputType==Enum.UserInputType.Keyboard and window._key and window._key~=Enum.KeyCode.Unknown and window._key.Name~="Unknown" and pressed.KeyCode==window._key then window:Toggle()end
     end)
     connect(input.WindowFocusReleased,function()window:_cancel()end)
     function window:SetScale(value)
@@ -205,7 +205,8 @@ function Library:Window(options)
         end
         local function control(kind,opts)
             opts=opts or {}
-            local c={_disabled=false,_destroyed=false,_value=opts.Default,_name=opts.Name or opts.Text or "",_options=opts.Options or {}}
+            local initialValue=if kind=="Keybind" then (opts.Default or Enum.KeyCode.Unknown) else opts.Default
+            local c={_disabled=false,_destroyed=false,_value=initialValue,_name=opts.Name or opts.Text or "",_options=opts.Options or {}}
             local handle,suppressed
             local function fire(value)
                 if suppressed or c._destroyed or window._destroyed then return end
@@ -228,9 +229,12 @@ function Library:Window(options)
             elseif kind=="Input"then handle=g:NewTextBox(c._name,opts.Desc,fire)
             elseif kind=="Dropdown"then handle=g:NewDropdown(c._name,opts.Desc,c._options,fire)
             elseif kind=="Keybind"then
-                handle=g:NewKeybind(c._name,opts.Desc,opts.Default or Enum.KeyCode.Unknown,function(pressed)
+                handle=g:NewKeybind(c._name,opts.Desc,c._value,function(pressed)
+                    if not pressed or pressed.UserInputType~=Enum.UserInputType.Keyboard then return end
+                    if not pressed.KeyCode or pressed.KeyCode==Enum.KeyCode.Unknown or pressed.KeyCode.Name=="Unknown" then return end
+                    if not c._value or c._value==Enum.KeyCode.Unknown or c._value.Name=="Unknown" or pressed.KeyCode~=c._value then return end
                     if Library:IsKeyboardBlocked(pressed) then return end
-                    if not c._disabled and not c._destroyed and not window._modal and opts.Callback then opts.Callback()end
+                    if not c._disabled and not c._destroyed and not window._modal and opts.Callback then opts.Callback(pressed.KeyCode)end
                 end)
                 handle.OnChanged=function(key)
                     if c._disabled or c._destroyed or window._destroyed or window._modal then return end

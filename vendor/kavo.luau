@@ -1042,9 +1042,9 @@ function Kavo.CreateLib(kavName, themeList, options)
             end
 
             function Elements:NewKeybind(keytext, keyinf, first, callback)
-                local oldKey = first.Name
+                local oldKey = (first and first.Name) or "Unknown"
                 local function displayKey(name)
-                    return name == "Unknown" and "None" or name
+                    return (not name or name == "Unknown" or name == "None") and "None" or name
                 end
                 local btn = Instance.new("TextButton", sectionInners)
                 btn.Size = UDim2.new(0, 352, 0, 33)
@@ -1100,7 +1100,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 local keyHandle={Frame=btn}
                 local capturing=false
                 function keyHandle:Set(key)
-                    oldKey=key.Name
+                    oldKey=(key and key.Name) or "Unknown"
                     togName_2.Text=displayKey(oldKey)
                 end
                 function keyHandle:Cancel()
@@ -1119,11 +1119,25 @@ function Kavo.CreateLib(kavName, themeList, options)
                         if current.UserInputType~=Enum.UserInputType.Keyboard then return end
                         Tabs.CapturedInput=current
                         keyHandle:Cancel()
-                        if current.KeyCode~=Enum.KeyCode.Escape and current.KeyCode~=Enum.KeyCode.Unknown then
+                        if current.KeyCode==Enum.KeyCode.Backspace or current.KeyCode==Enum.KeyCode.Delete then
+                            keyHandle:Set(Enum.KeyCode.Unknown)
+                            if keyHandle.OnChanged then keyHandle.OnChanged(Enum.KeyCode.Unknown) end
+                        elseif current.KeyCode~=Enum.KeyCode.Escape and current.KeyCode~=Enum.KeyCode.Unknown then
                             keyHandle:Set(current.KeyCode)
                             if keyHandle.OnChanged then keyHandle.OnChanged(current.KeyCode) end
                         end
-                    elseif oldKey~="Unknown" and not Tabs.Capturing and Tabs.CapturedInput~=current and not processed and not input:GetFocusedTextBox() and current.KeyCode.Name==oldKey then
+                    elseif current.UserInputType==Enum.UserInputType.Keyboard
+                        and current.KeyCode~=nil
+                        and current.KeyCode~=Enum.KeyCode.Unknown
+                        and current.KeyCode.Name~="Unknown"
+                        and oldKey~="Unknown"
+                        and oldKey~="None"
+                        and not Tabs.Capturing
+                        and Tabs.CapturedInput~=current
+                        and not processed
+                        and not input:GetFocusedTextBox()
+                        and current.KeyCode.Name==oldKey
+                    then
                         if callback then callback(current) end
                     end
                 end)

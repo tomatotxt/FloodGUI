@@ -438,10 +438,20 @@ return function(context)
 		{ "AirJump", "Air jump", Enum.KeyCode.M },
 		{ "SwimEnabled", "TAS swim mode", Enum.KeyCode.Y },
 	}) do
-		settings:Keybind({
+		local boundKey = item[3]
+		controls["Shortcut:" .. item[1]] = settings:Keybind({
 			Name = item[2],
-			Default = item[3],
-			Callback = function()
+			Default = boundKey,
+			OnChanged = function(key)
+				boundKey = key
+			end,
+			Callback = function(pressedKey)
+				if not boundKey or boundKey == Enum.KeyCode.Unknown or boundKey.Name == "Unknown" then
+					return
+				end
+				if pressedKey ~= nil and pressedKey ~= boundKey then
+					return
+				end
 				if getgenv().TAS_Active then
 					return
 				end
