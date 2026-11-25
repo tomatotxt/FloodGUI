@@ -108,8 +108,29 @@ function UI.notify(message, kind)
 	return false
 end
 
+local keyboardBlockers = {}
+function UI.addKeyboardBlocker(predicate)
+	assert(type(predicate) == "function", "Expected keyboard blocker predicate")
+	table.insert(keyboardBlockers, predicate)
+	return function()
+		local idx = table.find(keyboardBlockers, predicate)
+		if idx then
+			table.remove(keyboardBlockers, idx)
+		end
+	end
+end
+
 function UI.isKeyboardBlocked(pressed)
-    return Renderer:IsKeyboardBlocked(pressed)
+	if Renderer:IsKeyboardBlocked(pressed) then
+		return true
+	end
+	for _, predicate in ipairs(keyboardBlockers) do
+		local ok, blocked = pcall(predicate, pressed)
+		if ok and blocked then
+			return true
+		end
+	end
+	return false
 end
 
 function UI.confirm(window, title, content, action)

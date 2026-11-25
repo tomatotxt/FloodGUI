@@ -48,6 +48,9 @@ return function(serviceSource, touchSource)
 	function library:LoadFont()
 		return false
 	end
+	function library:IsKeyboardBlocked()
+		return false
+	end
 	local runtime = {
 		path = function(path)
 			return "FloodGUI/" .. path
@@ -168,6 +171,12 @@ return function(serviceSource, touchSource)
 	assert(service.notify("failure again") == false and warnings == 1, "Do not flood logs on repeated failures")
 	creator.Notify = originalNotify
 	assert(service.notify("recovered") == true and creator.message.Content == "recovered")
+	local unblock = service.addKeyboardBlocker(function(ev)
+		return ev == "captured"
+	end)
+	assert(service.isKeyboardBlocked("captured") and not service.isKeyboardBlocked("other"))
+	unblock()
+	assert(not service.isKeyboardBlocked("captured"))
 	service.destroy()
 	assert(creator._destroyed and service.destroyed and next(service.windows) == nil)
 	assert(not pcall(service.window, "late", "Late"), "Unloaded service cannot open zombie windows")

@@ -78,7 +78,7 @@ try{
   const file=path.join(temp,'loader.spec.luau');fs.writeFileSync(file,harness);execFileSync(tool('luau'),[file],{stdio:'inherit'});
   const modules=['ui/main.luau','ui/creator.luau','ui/recordings.luau','ui/player.luau'];
   const literal=text=>`[====[${text}]====]`;
-  const sources=modules.map(name=>`[${JSON.stringify(name)}]=${literal(fs.readFileSync(path.join(root,name),'utf8'))}`).join(',\n');
+  const sources=modules.concat('TAS/CREATOR/touch-controls.luau').map(name=>`[${JSON.stringify(name)}]=${literal(fs.readFileSync(path.join(root,name),'utf8'))}`).join(',\n');
   const uiTest=fs.readFileSync(path.join(root,'tests/ui-harness.luau'),'utf8');
   const uiFile=path.join(temp,'ui.spec.luau');
   fs.writeFileSync(uiFile,`local test=assert(loadstring(${literal(uiTest)}))()\ntest({${sources}})`);

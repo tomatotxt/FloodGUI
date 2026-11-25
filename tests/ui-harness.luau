@@ -126,10 +126,30 @@ return function(sources)
 		windows[id] = window
 		return window
 	end
+	local keyboardBlockers = {}
 	local UI = {
+		windows = windows,
+		scale = 1,
 		window = makeWindow,
 		setScale = function(value)
 			effects.scale = value
+		end,
+		addKeyboardBlocker = function(fn)
+			table.insert(keyboardBlockers, fn)
+			return function()
+				local i = table.find(keyboardBlockers, fn)
+				if i then
+					table.remove(keyboardBlockers, i)
+				end
+			end
+		end,
+		isKeyboardBlocked = function(pressed)
+			for _, fn in ipairs(keyboardBlockers) do
+				if fn(pressed) then
+					return true
+				end
+			end
+			return false
 		end,
 		confirm = function(_, _, _, callback)
 			pendingConfirm = callback
@@ -174,8 +194,129 @@ return function(sources)
 		end,
 	}
 	globals.FloodGUIRuntime = runtime
+	local vecMt = {}
+	local function vec2(x, y)
+		return setmetatable({ X = x or 0, Y = y or 0 }, vecMt)
+	end
+	vecMt.__sub = function(a, b)
+		return vec2(a.X - b.X, a.Y - b.Y)
+	end
+	local allInstances = {}
+	local instMethods = {}
+	local instMt = {
+		__index = function(t, k)
+			return instMethods[k] or t._props[k] or t._signals[k]
+		end,
+		__newindex = function(t, k, v)
+			local prev = t._props[k]
+			t._props[k] = v
+			if prev ~= v and t._propSignals[k] then
+				t._propSignals[k]:Fire()
+			end
+		end,
+	}
+	function instMethods:IsA(cls)
+		return self.ClassName == cls
+	end
+	function instMethods:GetChildren()
+		local res = {}
+		for _, item in ipairs(allInstances) do
+			if item.Parent == self and not item._destroyed then
+				table.insert(res, item)
+			end
+		end
+		return res
+	end
+	function instMethods:FindFirstChild(name)
+		for _, child in ipairs(self:GetChildren()) do
+			if child.Name == name then
+				return child
+			end
+		end
+		return nil
+	end
+	function instMethods:GetPropertyChangedSignal(prop)
+		self._propSignals[prop] = self._propSignals[prop] or signal()
+		return self._propSignals[prop]
+	end
+	function instMethods:Destroy()
+		if self._destroyed then
+			return
+		end
+		self._destroyed = true
+		self._signals.Destroying:Fire()
+		for _, child in ipairs(self:GetChildren()) do
+			child:Destroy()
+		end
+		self.Parent = nil
+	end
+	local function makeInstance(className, parent)
+		local obj = setmetatable({
+			_props = {
+				ClassName = className,
+				Name = className,
+				Visible = true,
+				Enabled = true,
+				Text = "",
+				AbsolutePosition = vec2(0, 0),
+				AbsoluteSize = vec2(200, 20),
+			},
+			_signals = {
+				Activated = signal(),
+				InputBegan = signal(),
+				InputChanged = signal(),
+				InputEnded = signal(),
+				Changed = signal(),
+				Destroying = signal(),
+			},
+			_propSignals = {},
+		}, instMt)
+		table.insert(allInstances, obj)
+		if parent then
+			obj.Parent = parent
+		end
+		return obj
+	end
+
+	local mockPlayerGui = makeInstance("PlayerGui")
+	mockPlayerGui.AbsoluteSize = vec2(1280, 720)
+	local mockGameGui = makeInstance("ScreenGui", mockPlayerGui)
+	mockGameGui.Name = "GameGui"
+	mockGameGui.Enabled = true
+	local mockAlerts = makeInstance("Frame", mockGameGui)
+	mockAlerts.Name = "Alerts"
+	local mockLocatorGui = makeInstance("ScreenGui", mockPlayerGui)
+	mockLocatorGui.Name = "LocatorGui"
+
+	local uis = {
+		TouchEnabled = true,
+		InputBegan = signal(),
+		InputChanged = signal(),
+		InputEnded = signal(),
+		WindowFocusReleased = signal(),
+		GetFocusedTextBox = function()
+			return nil
+		end,
+	}
+
 	local env = setmetatable({
-		Color3={fromRGB=function(r,g,b)return {r=r/255,g=g/255,b=b/255}end},
+		Instance = { new = makeInstance },
+		Vector2 = { new = vec2 },
+		UDim = { new = function(s, o) return { Scale = s, Offset = o } end },
+		UDim2 = {
+			new = function(xs, xo, ys, yo)
+				return { X = { Scale = xs, Offset = xo }, Y = { Scale = ys, Offset = yo } }
+			end,
+			fromOffset = function(x, y)
+				return { X = { Scale = 0, Offset = x }, Y = { Scale = 0, Offset = y } }
+			end,
+			fromScale = function(x, y)
+				return { X = { Scale = x, Offset = 0 }, Y = { Scale = y, Offset = 0 } }
+			end,
+		},
+		TweenInfo = { new = function(...) return { ... } end },
+		Color3 = { fromRGB = function(r, g, b) return { r = r / 255, g = g / 255, b = b / 255 } end },
+		workspace = { CurrentCamera = { ViewportSize = vec2(1280, 720) } },
 		getgenv = function()
 			return globals
 		end,
@@ -190,13 +331,34 @@ return function(sources)
 			end,
 			GetService = function(_, name)
 				if name == "Players" then
-					return { LocalPlayer = {
-						FindFirstChild = function()
-							return nil
+					local lp = {
+						FindFirstChild = function(_, child)
+							return child == "PlayerGui" and mockPlayerGui or nil
 						end,
-					} }
+						WaitForChild = function(_, child)
+							return child == "PlayerGui" and mockPlayerGui or nil
+						end,
+					}
+					return { LocalPlayer = lp }
+				elseif name == "TweenService" then
+					return {
+						Create = function(_, target, _, goal)
+							local completed = signal()
+							return {
+								Completed = completed,
+								Play = function()
+									for k, v in pairs(goal) do
+										target[k] = v
+									end
+									completed:Fire()
+								end,
+							}
+						end,
+					}
+				elseif name == "UserInputService" then
+					return uis
 				end
-				return { TouchEnabled = true }
+				return uis
 			end,
 		},
 	}, { __index = getfenv() })
@@ -444,25 +606,54 @@ return function(sources)
 	assert(not effects.unloaded)
 	pendingConfirm()
 	assert(effects.unloaded)
+	-- Test custom TAS_HUD creator UI (StatsPanel + expandable MenuFrame + Run Explorer + Key Capture + HoldPad)
+	main.window.Open = true
 	local creator = loadModule("ui/creator.luau").Create()
+	assert(creator.ScreenGui.Parent == mockPlayerGui and creator.ScreenGui.Name == "TAS_HUD", "Creator HUD must mount in PlayerGui")
+	assert(not main.window.Open, "Opening TAS Creator must minimize main Kavo window")
+	assert(not mockGameGui.Enabled and mockAlerts.Parent == mockLocatorGui, "Creator must hide GameGui while preserving Alerts in LocatorGui")
+	assert(creator.StatsPanel and not creator.MenuFrame.Visible, "StatsPanel starts visible with MenuFrame collapsed")
+
+	-- Open and close MenuFrame via MenuToggleButton and F6
+	creator.MenuToggleButton.Activated:Fire()
+	assert(creator.MenuFrame.Visible and creator.MenuToggleButton.Text == "Close Menu")
+	uis.InputBegan:Fire({ UserInputType = enums.UserInputType.Keyboard, KeyCode = enums.KeyCode.F6 }, false)
+	assert(not creator.MenuFrame.Visible and creator.MenuToggleButton.Text == "Open Menu")
+	creator.ToggleMenu(true)
+	assert(creator.MenuFrame.Visible)
+
 	local clicked = 0
 	creator.BindAction("SaveRun", function()
 		clicked += 1
 	end)
-	creator.Buttons.SaveRun.Options.Callback()
+	creator.Buttons.SaveRun.Button.Activated:Fire()
 	assert(clicked == 1)
+
 	creator.BindAction("AutoSwim", function()
 		clicked += 1
 	end)
 	creator.Buttons.AutoSwim:Set(false)
-	assert(clicked == 2)
+	assert(clicked == 2 and creator.Buttons.AutoSwim.Button.Text == "Auto-Swim: OFF")
 	creator.SyncSettings({ AutoSwim = true })
-	assert(creator.Buttons.AutoSwim:Get() and clicked == 2)
-	creator.SetFiles({ "One.json" }, function(name)
+	assert(creator.Buttons.AutoSwim:Get() and clicked == 2 and creator.Buttons.AutoSwim.Button.Text == "Auto-Swim: ON")
+
+	-- Smoothing FPS slider
+	creator.Buttons.SmoothingFPS:Set(45)
+	assert(globals.TargetSmoothingFPS == 45 and creator.Buttons.SmoothingFPS:Get() == 45)
+
+	-- Scrollable FileList & live search filter
+	creator.SetFiles({ "One.json", "Two.fe2tomatas" }, function(name)
 		effects.selected = name
 	end)
-	control(creator.Window, "Local recording"):Set("One.json")
+	local oneBtn = creator.FileList:FindFirstChild("One.json")
+	assert(oneBtn ~= nil and creator.FileList:FindFirstChild("Two.fe2tomatas") ~= nil)
+	oneBtn.Activated:Fire()
 	assert(effects.selected == "One.json")
+	creator.FilterBox.Text = "two"
+	assert(creator.FileList:FindFirstChild("One.json") == nil and creator.FileList:FindFirstChild("Two.fe2tomatas") ~= nil)
+	creator.FilterBox.Text = ""
+
+	-- Interactive keybind capture & keyboard blocking
 	local keys = {}
 	for _, key in ipairs({
 		"UserPause",
@@ -484,8 +675,44 @@ return function(sources)
 		keys[key] = "A"
 	end
 	creator.SetKeybinds(keys)
-	control(creator.Window, "Save recording").Options.OnChanged(enums.KeyCode.B)
-	assert(keys.SaveRun == "B")
+	assert(creator.Buttons.SaveRun.Button.Text:find("%(A%)") ~= nil, "Action button must display bound shortcut")
+	creator.Keybinds.SaveRun.Button.Activated:Fire()
+	assert(UI.isKeyboardBlocked(nil), "Active key capture must block creator/window hotkeys")
+	local bindEvent = { UserInputType = enums.UserInputType.Keyboard, KeyCode = enums.KeyCode.B }
+	local deferredClear = {}
+	local origDefer = taskMock.defer
+	taskMock.defer = function(fn)
+		table.insert(deferredClear, fn)
+	end
+	uis.InputBegan:Fire(bindEvent, false)
+	assert(keys.SaveRun == "B", "Key capture must update bound key")
+	assert(creator.Buttons.SaveRun.Button.Text:find("%(B%)") ~= nil, "Rebinding must refresh Controls button hint")
+	assert(UI.isKeyboardBlocked(bindEvent), "Captured InputObject must remain blocked until deferred frame finishes")
+	for _, fn in ipairs(deferredClear) do
+		fn()
+	end
+	taskMock.defer = origDefer
+	assert(not UI.isKeyboardBlocked(bindEvent), "Keyboard blocker must clear after capture event finishes")
+
+	-- Matching TAS_HUD HoldPad (CreateTouchControls)
+	local holdReleased = 0
+	local padFrame = creator.CreateTouchControls({
+		{
+			name = "Hold rewind",
+			press = function() end,
+			release = function()
+				holdReleased += 1
+			end,
+		},
+		{ name = "Pause", press = function() end },
+	}, function() end)
+	assert(padFrame.Visible and creator.PadWindow.Open, "Touch-enabled device must auto-open HoldPad")
+	local holdBtn = padFrame:FindFirstChild("PadScroll"):FindFirstChild("Hold rewind")
+	local touchInput = { UserInputType = enums.UserInputType.Touch, Position = vec2(10, 10), Changed = signal() }
+	holdBtn.InputBegan:Fire(touchInput)
+	creator.PadWindow:Toggle(false)
+	assert(not padFrame.Visible and holdReleased == 1, "Hiding HoldPad must release active holds immediately")
+
 	local player = loadModule("ui/player.luau")({
 		mapName = "Test",
 		smoothness = 0.04,
@@ -521,7 +748,8 @@ return function(sources)
 	player.Destroy()
 	assert(not effects.zip and not effects.slide and player.Window._destroyed)
 	creator.Destroy()
-	assert(creator.Window._destroyed)
+	assert(creator.ScreenGui._destroyed and creator.PadWindow._destroyed)
+	assert(mockGameGui.Enabled and mockAlerts.Parent == mockGameGui, "Destroying creator must restore GameGui and Alerts")
 	print(
 		"PASS: main/creator/player wiring, task-based TAS/Tools groups, feature parity, synchronized toggles, spending confirmation, file actions and cleanup"
 	)
