@@ -265,13 +265,6 @@ local function Noclip(Toggle)
 end
 
 local function Check(Flag)
-    if GameState and GameState.hasState() then
-        if Flag == "InLift" then
-            return GameState.isInLift()
-        elseif Flag == "InGame" then
-            return GameState.isInGame()
-        end
-    end
     local char = GetChar()
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -371,115 +364,228 @@ end
 -- ==============================================================================
 -- [6] AUTO FARM ENGINE (UPDATED MECHANICS)
 -- ==============================================================================
-local function StartAutoFarm(Map)
-    if State.CurrentlyFarming or State.PracticeMap == Map then return end
-    State.CurrentlyFarming = true
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then State.CurrentlyFarming = false; return end
-    local initialPosition, initialCamera = root.CFrame, Camera.CFrame
-    local function cancelled()
-        return Session.Cancelled or not Map.Parent or LocalPlayer.Character ~= char
-            or hum.Health <= 0 or not (State.AutoFarm or State.AutoPlay)
+local CompletedMaps = setmetatable({}, {__mode = "k"})
+local ActiveMapTasks = setmetatable({}, {__mode = "k"})
+local MapReadyAt = setmetatable({}, {__mode = "k"})
+
+local function GetRandomPointInPart(Part)
+    local Size = Part.Size
+    local CFramePos = Part.CFrame
+    if not Size or typeof(CFramePos) ~= "CFrame" then
+        return CFramePos
     end
-    local function delay(seconds)
-        local deadline = os.clock() + seconds
-        repeat
-            if cancelled() then return false end
-            task.wait(0.1)
-        until os.clock() >= deadline
-        return true
-    end
-    local ok, err = pcall(function()
-        local deadline = os.clock() + 60
-        repeat
-            if cancelled() or os.clock() > deadline then return end
-            task.wait(0.1)
-        until Check("InGame") and not root.Anchored
-        initialPosition, initialCamera = root.CFrame, Camera.CFrame
-        if not delay(State.StartDelay) then return end
-        local buttons = {}
-        for _, object in ipairs(Map:GetDescendants()) do
-            if isRandomString(object.Name) and object:IsA("Model") then
-                for _, part in ipairs(object:GetChildren()) do
-                    if part:IsA("BasePart") and tostring(part.BrickColor) ~= "Medium stone grey" then
-                        table.insert(buttons, {model = object, part = part})
-                        break
-                    end
+    local Rx = (math.random() - 0.5) * (Size.X * 0.9)
+    local Ry = (math.random() - 0.5) * (Size.Y * 0.9)
+    local Rz = (math.random() - 0.5) * (Size.Z * 0.9)
+    return CFramePos * CFrame.new(Rx, Ry, Rz)
+end
+
+local function ScanMapButtons(Map, buttons, seenModels)
+    for _, object in ipairs(Map:GetDescendants()) do
+        if not seenModels[object] and object:IsA("Model") and (isRandomString(object.Name) or object.Name:match("^Button%d*$") ~= nil) then
+            for _, part in ipairs(object:GetChildren()) do
+                if part:IsA("BasePart") and tostring(part.BrickColor) ~= "Medium stone grey" then
+                    seenModels[object] = true
+                    table.insert(buttons, {model = object, part = part})
+                    break
                 end
             end
         end
+    end
+end
+
+local function StartAutoFarm(Map)
+    if State.CurrentlyFarming or State.PracticeMap == Map or (CompletedMaps and CompletedMaps[Map]) then return end
+    local function aborted()
+        return Session.Cancelled or not Map.Parent or getgenv().TAS_Active
+            or not (State.AutoFarm or State.AutoPlay)
+    end
+
+    -- Stage 1: Wait until the player is physically teleported into the map zone (X > 50).
+    -- Do not set CurrentlyFarming yet so lobby players are never blocked from joining the lift.
+    local enterDeadline = os.clock() + 25
+    local lobbyDeadline = os.clock() + 5
+    while not Check("InGame") do
+        if aborted() or os.clock() > enterDeadline then return end
+        if Check("InLift") then
+            lobbyDeadline = os.clock() + 8
+        elseif os.clock() > lobbyDeadline then
+            if CompletedMaps then CompletedMaps[Map] = true end
+            return
+        end
+        task.wait(0.1)
+    end
+
+    if State.CurrentlyFarming or State.PracticeMap == Map or (CompletedMaps and CompletedMaps[Map]) then return end
+    State.CurrentlyFarming = true
+    State.Escaped = false
+
+    local char, root, hum
+    local healthConn, descendantConn
+    local function cancelled()
+        return aborted() or LocalPlayer.Character ~= char
+            or not root or not root.Parent or not hum or not hum.Parent or hum.Health <= 0
+    end
+    local function delay(seconds)
+        if seconds <= 0 then return not cancelled() end
+        local deadline = os.clock() + seconds
+        repeat
+            if cancelled() then return false end
+            task.wait(0.05)
+        until os.clock() >= deadline
+        return true
+    end
+
+    local ok, err = pcall(function()
+        -- Stage 2: Wait for FE2's round-start intro countdown to unanchor HumanoidRootPart.
+        local unanchorDeadline = os.clock() + 25
+        repeat
+            if aborted() or os.clock() > unanchorDeadline then return end
+            char = GetChar()
+            root = char and char:FindFirstChild("HumanoidRootPart")
+            hum = char and char:FindFirstChildOfClass("Humanoid")
+            if root and not Check("InGame") then return end
+            if root and not root.Anchored and hum and hum.Health > 0 then break end
+            task.wait(0.05)
+        until false
+
+        local initialPosition, initialCamera = root.CFrame, Camera.CFrame
+        if State.AutoCollect then
+            CollectMapItems(Map)
+            if cancelled() or not Check("InGame") then return end
+            root.CFrame = initialPosition
+        end
+        if not delay(State.StartDelay) then return end
+
+        local buttons, seenModels = {}, {}
+        ScanMapButtons(Map, buttons, seenModels)
+        if Map.DescendantAdded then
+            descendantConn = Map.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("Model") or descendant:IsA("BasePart") then
+                    local model = descendant:IsA("Model") and descendant or descendant.Parent
+                    if model and not seenModels[model] and model:IsA("Model")
+                        and (isRandomString(model.Name) or model.Name:match("^Button%d*$") ~= nil) then
+                        for _, part in ipairs(model:GetChildren()) do
+                            if part:IsA("BasePart") and tostring(part.BrickColor) ~= "Medium stone grey" then
+                                seenModels[model] = true
+                                table.insert(buttons, {model = model, part = part})
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
+        if hum.GetPropertyChangedSignal then
+            healthConn = hum:GetPropertyChangedSignal("Health"):Connect(function()
+                if not State.ResettingCharacter and not State.ResettingForDifficulty and hum.Health > 0 and hum.Health < hum.MaxHealth then
+                    hum.Health = hum.MaxHealth
+                end
+            end)
+        end
+
         local exitStart
         local escapeSerial = State.EscapeSerial
+        local zeroVel = Vector3 and Vector3.zero or nil
         while not cancelled() and Check("InGame") do
             local exit = Map:FindFirstChild("ExitRegion", true)
-            local remaining = GameState and GameState.getRemainingButtons()
-            local buttonsDone = (remaining ~= nil and remaining == 0)
-            local exitReady = exit and (buttonsDone or (remaining == nil and #buttons == 0))
-            if exitReady then
+            if exit then
                 if State.PlayAfterButtons then
+                    if healthConn then healthConn:Disconnect(); healthConn = nil end
                     root.Anchored = false
-                    root.CFrame, root.Velocity = initialPosition, Vector3.zero
+                    Noclip(State.Noclip)
+                    root.CFrame = initialPosition
+                    if zeroVel then root.Velocity = zeroVel end
                     Camera.CameraSubject, Camera.CFrame = hum, initialCamera
                     State.PracticeMap = Map
+                    if CompletedMaps then CompletedMaps[Map] = true end
                     Alert("Buttons complete. Returned to spawn for manual play.", "Success")
                     return
                 end
-                Noclip(State.Noclip)
+                Noclip(false)
                 root.Anchored = false
+                if Camera.CameraSubject ~= exit then
+                    Camera.CameraSubject = exit
+                end
                 exitStart = exitStart or os.clock()
-                if State.EscapeSerial ~= escapeSerial then
+                if State.EscapeSerial ~= escapeSerial or State.Escaped then
+                    if CompletedMaps then CompletedMaps[Map] = true end
+                    if healthConn then healthConn:Disconnect(); healthConn = nil end
+                    Camera.CameraSubject = hum
                     Alert("Escape confirmed.", "Success")
                     if State.ResetAfterEscape and delay(State.ResetDelay) then
                         State.ResettingCharacter = true
+                        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
                         hum.Health = 0
                     end
                     return
                 end
                 if os.clock() - exitStart > 15 then
+                    if CompletedMaps then CompletedMaps[Map] = true end
+                    Camera.CameraSubject = hum
                     Alert("No escape confirmation; stopping this map.", "Warning")
                     State.PracticeMap = Map
                     return
                 end
                 Advanced.forceWin()
-                root.CFrame = exit.CFrame
-                root.Velocity = Vector3.zero
+                root.CFrame = GetRandomPointInPart(exit)
+                if zeroVel then root.Velocity = zeroVel end
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                RunService.Heartbeat:Wait()
             else
+                if Camera.CameraSubject ~= hum then
+                    Camera.CameraSubject = hum
+                end
                 Noclip(true)
                 local direct = Advanced.directTarget(Map)
-                local activeBtn = GameState and GameState.getActiveButton()
                 if direct then
                     root.Anchored = false
-                    root.CFrame = direct.CFrame
-                elseif activeBtn and activeBtn:IsDescendantOf(Map) then
-                    root.Anchored = false
-                    root.CFrame = activeBtn.CFrame
+                    root.CFrame = GetRandomPointInPart(direct)
+                    if zeroVel then root.Velocity = zeroVel end
                     hum:ChangeState(Enum.HumanoidStateType.Jumping)
                     task.wait(0.05)
-                    hum:ChangeState(Enum.HumanoidStateType.Running)
-                    task.wait(0.05)
+                    if not cancelled() then
+                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                        task.wait(0.05)
+                    end
                 else
+                    root.Anchored = true
+                    if zeroVel then root.Velocity = zeroVel end
                     for _, entry in ipairs(buttons) do
-                        if cancelled() then break end
+                        if cancelled() or Map:FindFirstChild("ExitRegion", true) then break end
                         if entry.part.Parent and entry.model:FindFirstChild("TouchInterest", true)
                             and entry.model:FindFirstChildWhichIsA("BillboardGui", true) then
                             root.Anchored = false
-                            root.CFrame = entry.part.CFrame
+                            local pos = entry.part.Position
+                            if typeof(pos) == "Vector3" then
+                                root.CFrame = CFrame.new(pos - Vector3.new(math.random(), math.random(), math.random()))
+                            else
+                                root.CFrame = entry.part.CFrame
+                            end
                             hum:ChangeState(Enum.HumanoidStateType.Jumping)
                             task.wait(0.05)
+                            if cancelled() then break end
                             hum:ChangeState(Enum.HumanoidStateType.Running)
                             task.wait(0.05)
                         end
                     end
+                    if root.Parent and not Map:FindFirstChild("ExitRegion", true) then
+                        root.Anchored = true
+                        if zeroVel then root.Velocity = zeroVel end
+                    end
+                    RunService.Heartbeat:Wait()
                 end
             end
-            task.wait(0.1)
+        end
+        if exitStart and CompletedMaps then
+            CompletedMaps[Map] = true
         end
     end)
-    if root.Parent then root.Anchored = false end
-    if hum.Parent then Camera.CameraSubject = hum end
+    if descendantConn then pcall(function() descendantConn:Disconnect() end) end
+    if healthConn then pcall(function() healthConn:Disconnect() end) end
+    if root and root.Parent then root.Anchored = false end
+    if hum and hum.Parent then Camera.CameraSubject = hum end
     Noclip(State.Noclip)
     State.CurrentlyFarming = false
     if not ok then Alert("Farm stopped: " .. tostring(err), "Error") end
@@ -522,59 +628,109 @@ TrackConnection(NewMapVote.OnClientEvent:Connect(function(dataPacket)
 end))
 
 -- MAP LOAD PHASE (Handle Fallbacks & Difficulty Resetting)
-TrackConnection(Multiplayer.ChildAdded:Connect(function(NewMap)
-    if Session.Cancelled or (NewMap.Name ~= "NewMap" and NewMap.Name ~= "Map") then return end
-    Advanced.onMap(NewMap)
-    local readyDeadline=os.clock()+20
-    while NewMap.Name=="NewMap" and NewMap.Parent==Multiplayer and not Session.Cancelled and os.clock()<readyDeadline do
-        task.wait(0.05)
-    end
-    if Session.Cancelled or NewMap.Parent~=Multiplayer then return end
-    if NewMap.Name~="Map" then Alert("Map preparation timed out; waiting for the next map.","Warning");return end
-    CollectMapItems(NewMap)
-    if not State.AutoFarm and not State.AutoPlay then return end
-
-    local Settings = NewMap:WaitForChild("Settings", 10)
-    local MapName = Settings and Settings:GetAttribute("MapName") or NewMap.Name
-    local cleanName = CleanMapName(MapName)
-    local hasTasFile = HasTASFile(cleanName)
-
-    local success, result = pcall(function()
-        local diffText = Workspace.Lobby.GameInfo.SurfaceGui.Frame.Difficulty.Difficulty.Text
-        return diffText:split(":")[1]:gsub("^%s*(.-)%s*$", "%1")
-    end)
-    local currentRank = DIFFICULTY_RANKS[result] or 0
-    local targetRank = DIFFICULTY_RANKS[State.TargetDifficulty] or 999
-
-    if State.EnforceDifficulty and currentRank > targetRank then
-        Alert("Map is too hard ("..result.."). Resetting...", "Error")
-        State.ResettingForDifficulty = true
-        task.wait(1)
-        if Session.Cancelled then return end
-        local character = GetChar()
-        local h = character and character:FindFirstChild("Humanoid")
-        if h then h.Health = 0 end
-        return
-    end
-
-    if State.AutoPlay then
-        if not hasTasFile and State.FallbackToFarm then
-            Alert("No TAS found for map. Forcing Blatant Fallback...", "Warning")
-
-            if getgenv().TASConnections then
-                for _, conn in pairs(getgenv().TASConnections) do pcall(function() conn:Disconnect() end) end
+local function CollectMapItemsWhenReady(TargetMap)
+    task.spawn(function()
+        local deadline = os.clock() + 30
+        while TargetMap.Parent == Multiplayer and not Session.Cancelled and os.clock() < deadline do
+            if not State.AutoCollect or State.AutoFarm or getgenv().TAS_Active or getgenv().IsTASPlaying then
+                return
             end
-            getgenv().IsTASPlaying = false
+            local char = GetChar()
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if Check("InGame") and root and not root.Anchored then
+                CollectMapItems(TargetMap)
+                return
+            end
+            task.wait(0.1)
+        end
+    end)
+end
 
+local function ProcessMap(NewMap)
+    if Session.Cancelled or not NewMap or (NewMap.Name ~= "NewMap" and NewMap.Name ~= "Map") then return end
+    if ActiveMapTasks[NewMap] or CompletedMaps[NewMap] or State.PracticeMap == NewMap then return end
+    ActiveMapTasks[NewMap] = true
+    local ok, err = pcall(function()
+        Advanced.onMap(NewMap)
+        local readyDeadline = os.clock() + 120
+        while NewMap.Name == "NewMap" and NewMap.Parent == Multiplayer and not Session.Cancelled and os.clock() < readyDeadline do
+            task.wait(0.05)
+        end
+        if Session.Cancelled or NewMap.Parent ~= Multiplayer then return end
+        if NewMap.Name ~= "Map" then
+            Alert("Map preparation timed out; waiting for the next map.", "Warning")
+            return
+        end
+        MapReadyAt[NewMap] = MapReadyAt[NewMap] or os.clock()
+        if State.AutoCollect and not State.AutoFarm then
+            CollectMapItemsWhenReady(NewMap)
+        end
+        if not State.AutoFarm and not State.AutoPlay then return end
+
+        local Settings = NewMap:WaitForChild("Settings", 10)
+        local MapName = Settings and Settings:GetAttribute("MapName") or NewMap.Name
+        local cleanName = CleanMapName(MapName)
+        local hasTasFile = HasTASFile(cleanName)
+
+        local _, result = pcall(function()
+            local diffText = Workspace.Lobby.GameInfo.SurfaceGui.Frame.Difficulty.Difficulty.Text
+            return diffText:split(":")[1]:gsub("^%s*(.-)%s*$", "%1")
+        end)
+        local currentRank = DIFFICULTY_RANKS[result] or 0
+        local targetRank = DIFFICULTY_RANKS[State.TargetDifficulty] or 999
+
+        if State.EnforceDifficulty and currentRank > targetRank then
+            local resetDeadline = os.clock() + 25
+            local lobbyTimeout = os.clock() + 5
+            while not Session.Cancelled and NewMap.Parent == Multiplayer and os.clock() < resetDeadline do
+                if Check("InLift") then
+                    lobbyTimeout = os.clock() + 8
+                elseif not Check("InGame") and os.clock() > lobbyTimeout then
+                    CompletedMaps[NewMap] = true
+                    return
+                end
+                local character = GetChar()
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                local h = character and character:FindFirstChildOfClass("Humanoid")
+                if Check("InGame") and root and not root.Anchored and h and h.Health > 0 then
+                    Alert("Map is too hard (" .. tostring(result) .. "). Resetting...", "Error")
+                    CompletedMaps[NewMap] = true
+                    State.ResettingForDifficulty = true
+                    h.Health = 0
+                    return
+                end
+                task.wait(0.1)
+            end
+            return
+        end
+
+        if State.AutoPlay then
+            if not hasTasFile and State.FallbackToFarm then
+                Alert("No TAS found for map. Forcing Blatant Fallback...", "Warning")
+                if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
+                if getgenv().TASConnections then
+                    for _, conn in pairs(getgenv().TASConnections) do pcall(function() conn:Disconnect() end) end
+                end
+                getgenv().IsTASPlaying = false
+                StartAutoFarm(NewMap)
+            end
+            return
+        end
+
+        if State.AutoFarm and not State.AutoPlay then
+            Alert("Starting Auto-Farm operation on: " .. tostring(MapName), "Info")
             StartAutoFarm(NewMap)
         end
-        return
+    end)
+    ActiveMapTasks[NewMap] = nil
+    if not ok and not Session.Cancelled then
+        Alert("Map handler error: " .. tostring(err), "Error")
     end
+end
 
-    if State.AutoFarm and not State.AutoPlay then
-        Alert("Starting Auto-Farm operation on: " .. MapName, "Info")
-        StartAutoFarm(NewMap)
-    end
+TrackConnection(Multiplayer.ChildAdded:Connect(function(NewMap)
+    if Session.Cancelled or (NewMap.Name ~= "NewMap" and NewMap.Name ~= "Map") then return end
+    ProcessMap(NewMap)
 end))
 
 -- Win Tracker
@@ -631,24 +787,35 @@ task.spawn(function()
     end
 end)
 
--- Lift Rejoin Loop
+-- Lift Rejoin & Active Map Pickup Loop
 task.spawn(function()
     while task.wait(1) do
         if Session.Cancelled then break end
         Advanced.tick()
-        if State.AutoJoinLift and (State.AutoFarm or State.AutoPlay or State.SelectTASMaps) and not State.CurrentlyFarming and not (State.PracticeMap and State.PracticeMap.Parent) then
-            if not Check("InLift") and not Check("InGame") then
-                AddedWaiting:FireServer()
-                pcall(function()
-                    local waitTeleport = Workspace:FindFirstChild("Lobby")
-                        and Workspace.Lobby:FindFirstChild("WaitingArea")
-                        and Workspace.Lobby.WaitingArea:FindFirstChild("WaitTeleport")
-                    local char = LocalPlayer.Character
-                    local root = char and char:FindFirstChild("HumanoidRootPart")
-                    if waitTeleport and root and not Check("InLift") then
-                        root.CFrame = waitTeleport.CFrame
+        if not State.AutoFarm and not State.AutoPlay and CompletedMaps then
+            table.clear(CompletedMaps)
+        end
+        if (State.AutoFarm or State.AutoPlay) and not State.CurrentlyFarming and not getgenv().TAS_Active then
+            local pendingNewMap = Multiplayer:FindFirstChild("NewMap")
+            if pendingNewMap and not ActiveMapTasks[pendingNewMap] then
+                task.spawn(ProcessMap, pendingNewMap)
+            else
+                local activeMap = Multiplayer:FindFirstChild("Map")
+                if activeMap and not ActiveMapTasks[activeMap] and not CompletedMaps[activeMap] and State.PracticeMap ~= activeMap then
+                    local recentTransition = MapReadyAt[activeMap] and (os.clock() - MapReadyAt[activeMap] < 12)
+                    if Check("InGame") or (Check("InLift") and recentTransition) then
+                        task.spawn(ProcessMap, activeMap)
                     end
-                end)
+                end
+            end
+        end
+        if State.AutoJoinLift and (State.AutoFarm or State.AutoPlay or State.SelectTASMaps)
+            and not (State.PracticeMap and State.PracticeMap.Parent) and not getgenv().TAS_Active then
+            local char = GetChar()
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if root and hum and hum.Health > 0 and not Check("InLift") and not Check("InGame") then
+                AddedWaiting:FireServer()
             end
         end
     end
@@ -680,7 +847,7 @@ TrackConnection(RunService.Heartbeat:Connect(function()
     if Session.Cancelled then return end
     local engineOwnsCharacter = getgenv().IsTASPlaying or getgenv().TAS_Active
     if engineOwnsCharacter then return end
-    if State.Noclip then Noclip(true) end
+    if State.Noclip and not State.CurrentlyFarming then Noclip(true) end
     if State.AutoZipline and not engineOwnsCharacter then NativeZipline.check() end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -736,18 +903,11 @@ end))
 TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
     State.ResettingCharacter = false
     if State.ResettingForDifficulty then
-        char:WaitForChild("HumanoidRootPart", 10)
+        local root = char:WaitForChild("HumanoidRootPart", 10)
         task.wait(0.5)
-        AddedWaiting:FireServer()
-        pcall(function()
-            local waitTeleport = Workspace:FindFirstChild("Lobby")
-                and Workspace.Lobby:FindFirstChild("WaitingArea")
-                and Workspace.Lobby.WaitingArea:FindFirstChild("WaitTeleport")
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if waitTeleport and root then
-                root.CFrame = waitTeleport.CFrame
-            end
-        end)
+        if root and not Session.Cancelled and State.AutoJoinLift then
+            AddedWaiting:FireServer()
+        end
         State.ResettingForDifficulty = false
     end
 end))
@@ -795,6 +955,8 @@ local function StopAutomation()
     getgenv().IsTASPlaying = false
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth = false, false
+    State.PracticeMap = nil
+    if CompletedMaps then table.clear(CompletedMaps) end
     getgenv().TomatoAutoFarm = false
     if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
     Advanced.cleanup()

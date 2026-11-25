@@ -75,5 +75,127 @@ return function(source)
     assert(advancedCleaned==2 and swimDestroyed==2 and uiDestroyed==1,"Full Session.Cleanup must clean up Advanced hooks, NativeSwim, and UI")
     env.Session.Cleanup()
     assert(advancedCleaned==2 and swimDestroyed==2,"Session.Cleanup must be idempotent")
-    print("PASS: actual main startup defaults, movement ownership, selected Farm flow and collection-to-creator handoff")
+
+    -- Physical Check("InLift") / Check("InGame") must remain authoritative even with stale GameState.
+    env.Session.Cancelled=false
+    env.GetChar=function()return env.LocalPlayer.Character end
+    env.GameState={
+        hasState=function()return true end,
+        isInLift=function()return false end,
+        isInGame=function()return true end,
+        getRemainingButtons=function()return 4 end,
+        getActiveButton=function()return {IsDescendantOf=function()return true end,CFrame="stale_goal"} end,
+    }
+    root.Position={X=0,Y=-144,Z=0}
+    local checkFn=compile(section("local function Check(Flag)","local function GetSessionKey").."\nreturn Check")
+    env.Check=checkFn
+    assert(not checkFn("InLift") and not checkFn("InGame"),"Lobby position must not report InLift/InGame from stale GameState")
+    root.Position={X=-25,Y=-144,Z=139}
+    assert(checkFn("InLift") and not checkFn("InGame"),"Lift coordinates must report InLift even during loading state")
+    root.Position={X=9000,Y=3200,Z=9000}
+    assert(not checkFn("InLift") and checkFn("InGame"),"Map coordinates must report InGame")
+
+    -- Lift entry fires AddedWaiting cleanly without yanking CFrame to WaitTeleport, and works from Lobby.
+    local liftFires=0
+    env.AddedWaiting={FireServer=function()liftFires+=1 end}
+    env.Multiplayer={FindFirstChild=function()return nil end}
+    env.Advanced={tick=function()end,forceWin=function()end,directTarget=function()return nil end,onMap=function()end,cleanup=function()end}
+    local liftThread
+    env.task={
+        wait=function(t)coroutine.yield();return t or 1 end,
+        spawn=function(fn,...)
+            if not liftThread then liftThread=coroutine.create(fn) else fn(...) end
+        end,
+    }
+    env.State.AutoJoinLift=true;env.State.AutoFarm=true;env.State.CurrentlyFarming=true
+    root.Position={X=0,Y=-144,Z=0};root.CFrame="lobby_spawn";humanoid.Health=100;humanoid.Parent=true
+    env.CompletedMaps={};env.ActiveMapTasks={};env.MapReadyAt={}
+    local pickedMap=nil
+    env.ProcessMap=function(m)pickedMap=m end
+    compile(section("-- Lift Rejoin & Active Map Pickup Loop","-- Auto Rebirth Loop"))
+    assert(coroutine.resume(liftThread)) -- starts loop at while task.wait(1)
+    assert(coroutine.resume(liftThread)) -- executes one tick in Lobby
+    assert(liftFires==1 and root.CFrame=="lobby_spawn","Lobby player must fire AddedWaiting without WaitTeleport CFrame yank")
+    root.Position={X=-25,Y=-144,Z=139}
+    assert(coroutine.resume(liftThread)) -- executes tick in Lift
+    assert(liftFires==1,"Player inside lift must not spam AddedWaiting during loading")
+    -- Mid-round AutoFarm enable: existing Multiplayer.Map is picked up when physically InGame, ignored when stale in Lift.
+    local liveMap={Name="Map",Parent=env.Multiplayer}
+    env.Multiplayer={FindFirstChild=function(_,n)return n=="Map" and liveMap or nil end}
+    env.State.CurrentlyFarming=false
+    assert(coroutine.resume(liftThread)) -- in Lift with stale Map -> must NOT pick up other players' old Map
+    assert(pickedMap==nil,"Must not attach to stale ongoing Map while waiting in Lift")
+    root.Position={X=9000,Y=3200,Z=9000}
+    assert(coroutine.resume(liftThread)) -- physically InGame -> must pick up existing Map!
+    assert(pickedMap==liveMap,"Enabling AutoFarm mid-round must pick up existing Map")
+
+    -- StartAutoFarm waits for physical map arrival + unanchor, anchors between scans, and enters ExitRegion despite stale GameState.
+    env.isRandomString=compile(section("local function isRandomString(str)","local function CleanMapName").."\nreturn isRandomString")
+    env.Camera={CFrame="cam_init",CameraSubject=humanoid}
+    env.Enum={HumanoidStateType={Jumping="Jumping",Running="Running",Dead="Dead"}}
+    local noclipStates={}
+    env.Noclip=function(v)table.insert(noclipStates,v)end
+    env.RunService={Heartbeat={Wait=function()coroutine.yield();return 0.016 end}}
+    env.task={wait=function(t)coroutine.yield();return t or 0.05 end,spawn=function(fn,...)fn(...)end}
+    local btnPart={
+        Parent=true,
+        BrickColor="Bright blue",
+        CFrame="btn_cf",
+        IsA=function(_,c)return c=="BasePart" end,
+    }
+    local touchInterest={Name="TouchInterest"}
+    local billboard={IsA=function(_,c)return c=="BillboardGui" end}
+    local btnModel
+    btnModel={
+        Name="ABCDEFGH",
+        IsA=function(_,c)return c=="Model" end,
+        GetChildren=function()return {btnPart} end,
+        FindFirstChild=function(_,name)
+            if name=="TouchInterest" then return touchInterest end
+            return nil
+        end,
+        FindFirstChildWhichIsA=function(_,cls)
+            if cls=="BillboardGui" then return billboard end
+            return nil
+        end,
+    }
+    local exitPart=nil
+    local farmMap={
+        Parent=true,
+        GetDescendants=function()return {btnModel} end,
+        FindFirstChild=function(_,name)
+            if name=="ExitRegion" then return exitPart end
+            return nil
+        end,
+    }
+    humanoid.ChangeState=function()end
+    env.CollectMapItems=function()root.CFrame="collected" end
+    env.State.AutoFarm=true;env.State.AutoCollect=true;env.State.StartDelay=0;env.State.EscapeSerial=0;env.State.Escaped=false
+    -- Start in lift (unanchored!): StartAutoFarm must NOT start farming or collect items in lift.
+    root.Position={X=-25,Y=-144,Z=139};root.Anchored=false;root.CFrame="in_lift"
+    local farm=compile(section("-- [6] AUTO FARM ENGINE","-- [7] MAP LOAD EVENT").."\nreturn StartAutoFarm")
+    local farmCo=coroutine.create(function()farm(farmMap)end)
+    assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="suspended")
+    assert(not env.State.CurrentlyFarming and root.CFrame=="in_lift","Must not start farming or collect items while still in lift")
+    -- Teleport to map while anchored for countdown: still must wait for unanchor!
+    root.Position={X=9000,Y=3200,Z=9000};root.Anchored=true;root.CFrame="map_spawn"
+    assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="suspended")
+    assert(env.State.CurrentlyFarming and root.CFrame=="map_spawn","Must wait for round-start unanchor before moving root")
+    -- Unanchor -> round starts: collects items, restores map_spawn, then touches active button (ignoring stale activeBtn).
+    root.Anchored=false
+    assert(coroutine.resume(farmCo) and root.CFrame=="btn_cf","Must touch active button hitbox after unanchor")
+    assert(coroutine.resume(farmCo)) -- finish 0.05s Jumping wait
+    -- Clear button TouchInterest -> re-anchors between scans, then spawn ExitRegion -> enters ExitRegion despite stale GameState.
+    touchInterest=nil
+    assert(coroutine.resume(farmCo)) -- finish 0.05s Running wait -> anchors root & yields on Heartbeat
+    assert(root.Anchored,"Must re-anchor root between button scans so Noclip never drops player into void")
+    exitPart={CFrame="exit_cf"}
+    assert(coroutine.resume(farmCo)) -- next iteration sees ExitRegion -> Noclip(false), moves to exit_cf, yields on Heartbeat
+    assert(root.CFrame=="exit_cf" and env.Camera.CameraSubject==exitPart,"Must enter ExitRegion immediately when it spawns")
+    -- Confirm escape -> exits cleanly and restores CameraSubject + CurrentlyFarming=false.
+    env.State.EscapeSerial=1
+    assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="dead")
+    assert(not env.State.CurrentlyFarming and env.Camera.CameraSubject==humanoid,"Farm must clean up state after confirmed escape")
+
+    print("PASS: actual main startup defaults, movement ownership, selected Farm flow, lift/round-start truth and autofarm lifecycle")
 end
