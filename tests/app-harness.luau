@@ -143,7 +143,12 @@ return function(source)
         CFrame="btn_cf",
         IsA=function(_,c)return c=="BasePart" end,
     }
-    local touchInterest={Name="TouchInterest"}
+    local touchInterest={Name="TouchInterest",Parent=btnPart}
+    local pressedTarget=nil
+    env.PressedMapButton={
+        IsA=function(_,c)return c=="RemoteEvent" end,
+        FireServer=function(_,part)pressedTarget=part end,
+    }
     local billboard={IsA=function(_,c)return c=="BillboardGui" end}
     local btnModel
     btnModel={
@@ -186,13 +191,13 @@ return function(source)
     root.Position={X=9000,Y=3200,Z=9000};root.Anchored=true;root.CFrame="map_spawn"
     assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="suspended")
     assert(env.State.CurrentlyFarming and env.State.CurrentMapName=="Blue Moon" and env.State.FarmPhase=="Waiting for countdown" and root.CFrame=="map_spawn","Must wait for round-start unanchor before moving root")
-    -- Unanchor -> round starts: collects items, restores map_spawn, then touches active button (ignoring stale activeBtn).
+    -- Unanchor -> round starts: collects items, restores map_spawn, moves to button, steps 1 Heartbeat, and fires PressedMapButton(btnPart).
     root.Anchored=false
-    assert(coroutine.resume(farmCo) and root.CFrame=="btn_cf" and env.State.FarmPhase=="Pressing buttons","Must touch active button hitbox after unanchor")
-    assert(coroutine.resume(farmCo)) -- finish 0.05s Jumping wait
-    -- Clear button TouchInterest -> re-anchors between scans, then spawn ExitRegion -> enters ExitRegion despite stale GameState.
+    assert(coroutine.resume(farmCo) and root.CFrame=="btn_cf" and env.State.FarmPhase=="Pressing buttons","Must move onto active button hitbox immediately after unanchor")
+    -- Clear button TouchInterest -> wakes from single Heartbeat, fires PressedMapButton(btnPart), re-anchors on idle scan, then enters ExitRegion.
     touchInterest=nil
-    assert(coroutine.resume(farmCo)) -- finish 0.05s Running wait -> anchors root & yields on Heartbeat
+    assert(coroutine.resume(farmCo)) -- wakes from 1-frame button Heartbeat -> fires PressedMapButton(btnPart), loops, sees no active button, anchors & yields on idle Heartbeat
+    assert(pressedTarget==btnPart,"Must fire PressedMapButton:FireServer with the exact TouchInterest BasePart")
     assert(root.Anchored,"Must re-anchor root between button scans so Noclip never drops player into void")
     exitPart={CFrame="exit_cf"}
     assert(coroutine.resume(farmCo)) -- next iteration sees ExitRegion -> Noclip(false), moves to exit_cf, yields on Heartbeat

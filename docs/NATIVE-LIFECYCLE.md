@@ -21,7 +21,7 @@ Accordingly:
 ## Button scanning and exit navigation
 
 In `StartAutoFarm`:
-1. **Button phase:** Scans map models (both uppercase-obfuscated and `Button*` models, plus dynamic `DescendantAdded` additions) for active `TouchInterest` + `BillboardGui` hitboxes, with an automatic `TouchInterest`-only fallback after 2.5s for no-locator map events. Between scans, `HumanoidRootPart.Anchored = true` with zeroed linear/angular velocity prevents `Noclip(true)` from dropping the character through the floor into the void.
+1. **Button phase:** Scans map models (both uppercase-obfuscated and `Button*` models, plus dynamic `DescendantAdded` additions) for active `TouchInterest` + `BillboardGui` hitboxes, with an automatic `TouchInterest`-only fallback after 2.5s for no-locator map events. For each active button, it resolves the exact `TouchInterest` owner `BasePart` (`u3` in `CL_Buttons`), moves onto the hitbox, steps a single `RunService.Heartbeat` frame (eliminating the legacy `0.05s + 0.05s` jump/run sleep), and fires `ReplicatedStorage.Remote.PressedMapButton:FireServer(targetPart)` directly with `CL_Buttons`'s native `0.05s` per-part debounce. Between scans, `HumanoidRootPart.Anchored = true` with zeroed linear/angular velocity prevents `Noclip(true)` from dropping the character through the floor into the void.
 2. **Exit phase:** As soon as FE2 spawns `ExitRegion` into `Map`, `StartAutoFarm` disables `Noclip(false)`, focuses `CurrentCamera.CameraSubject` on `ExitRegion`, and samples interior points via `GetRandomPointInPart(exit)` on `RunService.Heartbeat` until escape is confirmed (or returns to `initialPosition` when `PlayAfterButtons` is enabled).
 
 ## Server-confirmed win / escape outcome

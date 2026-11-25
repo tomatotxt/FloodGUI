@@ -71,6 +71,7 @@ local NewMapVote = RemoteFolder:WaitForChild("NewMapVote")
 local UpdMapVote = RemoteFolder:WaitForChild("UpdMapVote")
 local AddedWaiting = RemoteFolder:WaitForChild("AddedWaiting")
 local AlertRemote = RemoteFolder:WaitForChild("Alert")
+local PressedMapButton = RemoteFolder:FindFirstChild("PressedMapButton")
 
 -- Native FE2 round lifecycle and state manager
 local GameState = Runtime.run("gamestate.luau")(RemoteFolder, TrackConnection)
@@ -313,14 +314,18 @@ local function CollectMapItems(Map)
     end
     ActiveCollectionCleanup=release
     local ok,err=pcall(function()
+        local hitbox = char:FindFirstChild("FE2_Hitbox") or root
         local rescue = Map:FindFirstChild("_Rescue", true)
         for _, part in pairs({Map:FindFirstChild("_LostPage", true), rescue and rescue:FindFirstChild("Contact")}) do
             if finished or Session.Cancelled or getgenv().TAS_Active or getgenv().IsTASPlaying then return end
             if part:IsA("BasePart") then
                 root.CFrame = part.CFrame
-                task.wait(0.1)
+                if type(firetouchinterest) == "function" then
+                    pcall(firetouchinterest, hitbox, part, 0)
+                    pcall(firetouchinterest, hitbox, part, 1)
+                end
+                task.wait()
                 if finished then return end
-                if root.Parent then root.CFrame=original end
             end
         end
     end)
@@ -470,7 +475,7 @@ local function StartAutoFarm(Map, mapDisplayName)
             if CompletedMaps then CompletedMaps[Map] = true end
             return
         end
-        task.wait(0.1)
+        task.wait(0.03)
     end
 
     if State.CurrentlyFarming or State.PracticeMap == Map or (CompletedMaps and CompletedMaps[Map]) then return end
@@ -492,13 +497,13 @@ local function StartAutoFarm(Map, mapDisplayName)
         local deadline = os.clock() + seconds
         repeat
             if cancelled() then return false end
-            task.wait(0.05)
+            task.wait(0.03)
         until os.clock() >= deadline
         return true
     end
 
     local ok, err = pcall(function()
-        -- Stage 2: Wait for FE2's round-start intro countdown to unanchor HumanoidRootPart.
+        -- Stage 2: Frame-exact wait for FE2's round-start intro countdown to unanchor HumanoidRootPart.
         local unanchorDeadline = os.clock() + 25
         repeat
             if aborted() or os.clock() > unanchorDeadline then return end
@@ -507,7 +512,7 @@ local function StartAutoFarm(Map, mapDisplayName)
             hum = char and char:FindFirstChildOfClass("Humanoid")
             if root and not Check("InGame") then return end
             if root and not root.Anchored and hum and hum.Health > 0 then break end
-            task.wait(0.05)
+            RunService.Heartbeat:Wait()
         until false
 
         local cam = GetCamera()
@@ -553,7 +558,31 @@ local function StartAutoFarm(Map, mapDisplayName)
 
         local exitStart
         local lastLocatorHit = os.clock()
+        local lastRemotePress = setmetatable({}, {__mode = "k"})
+        local pressRemote = PressedMapButton or (RemoteFolder and RemoteFolder:FindFirstChild("PressedMapButton"))
+        local hitbox = char:FindFirstChild("FE2_Hitbox") or root
         local escapeSerial = State.EscapeSerial
+
+        local function pressButtonPart(targetPart)
+            root.Anchored = false
+            root.CFrame = GetButtonTouchCFrame(targetPart)
+            ZeroVelocity(root)
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            if type(firetouchinterest) == "function" and hitbox and hitbox.Parent then
+                pcall(firetouchinterest, hitbox, targetPart, 0)
+                pcall(firetouchinterest, hitbox, targetPart, 1)
+            end
+            -- Step one physics frame so the character's position at the button replicates alongside the remote.
+            RunService.Heartbeat:Wait()
+            if pressRemote and pressRemote:IsA("RemoteEvent") then
+                local now = os.clock()
+                if now - (lastRemotePress[targetPart] or -math.huge) >= 0.05 then
+                    lastRemotePress[targetPart] = now
+                    pcall(pressRemote.FireServer, pressRemote, targetPart)
+                end
+            end
+        end
+
         while not cancelled() and Check("InGame") do
             cam = GetCamera()
             local exit = Map:FindFirstChild("ExitRegion", true)
@@ -616,15 +645,7 @@ local function StartAutoFarm(Map, mapDisplayName)
                 if direct then
                     State.FarmPhase = "Pressing buttons"
                     lastLocatorHit = os.clock()
-                    root.Anchored = false
-                    root.CFrame = GetRandomPointInPart(direct)
-                    ZeroVelocity(root)
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                    task.wait(0.05)
-                    if not cancelled() then
-                        hum:ChangeState(Enum.HumanoidStateType.Running)
-                        task.wait(0.05)
-                    end
+                    pressButtonPart(direct)
                 else
                     root.Anchored = true
                     ZeroVelocity(root)
@@ -632,30 +653,24 @@ local function StartAutoFarm(Map, mapDisplayName)
                     local touchedAny = false
                     for _, entry in ipairs(buttons) do
                         if cancelled() or Map:FindFirstChild("ExitRegion", true) then break end
-                        local hasTouch = entry.part.Parent and entry.model:FindFirstChild("TouchInterest", true)
-                        local hasGui = hasTouch and entry.model:FindFirstChildWhichIsA("BillboardGui", true)
-                        if hasTouch and (hasGui or allowNoGuiFallback) then
+                        local touch = entry.part.Parent and entry.model:FindFirstChild("TouchInterest", true)
+                        local hasGui = touch and entry.model:FindFirstChildWhichIsA("BillboardGui", true)
+                        if touch and (hasGui or allowNoGuiFallback) then
                             touchedAny = true
                             if hasGui then lastLocatorHit = os.clock() end
                             State.FarmPhase = "Pressing buttons"
-                            root.Anchored = false
-                            root.CFrame = GetButtonTouchCFrame(entry.part)
-                            ZeroVelocity(root)
-                            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                            task.wait(0.05)
-                            if cancelled() then break end
-                            hum:ChangeState(Enum.HumanoidStateType.Running)
-                            task.wait(0.05)
+                            local targetPart = (touch.Parent and touch.Parent.IsA and touch.Parent:IsA("BasePart")) and touch.Parent or entry.part
+                            pressButtonPart(targetPart)
                         end
-                    end
-                    if not touchedAny then
-                        State.FarmPhase = #buttons == 0 and "Waiting for exit" or "Waiting for button"
                     end
                     if root.Parent and not Map:FindFirstChild("ExitRegion", true) then
                         root.Anchored = true
                         ZeroVelocity(root)
                     end
-                    RunService.Heartbeat:Wait()
+                    if not touchedAny then
+                        State.FarmPhase = #buttons == 0 and "Waiting for exit" or "Waiting for button"
+                        RunService.Heartbeat:Wait()
+                    end
                 end
             end
         end
@@ -742,7 +757,7 @@ local function ProcessMap(NewMap)
             if (State.AutoFarm or State.AutoPlay) and not State.CurrentlyFarming then
                 State.FarmPhase = "Loading map"
             end
-            task.wait(0.05)
+            RunService.Heartbeat:Wait()
         end
         if Session.Cancelled or NewMap.Parent ~= Multiplayer then return end
         if NewMap.Name ~= "Map" then
@@ -880,7 +895,8 @@ end)
 
 -- Lift Rejoin & Active Map Pickup Loop
 task.spawn(function()
-    while task.wait(1) do
+    local lastLiftFire = -math.huge
+    while task.wait(0.25) do
         if Session.Cancelled then break end
         Advanced.tick()
         if not State.AutoFarm and not State.AutoPlay then
@@ -918,7 +934,9 @@ task.spawn(function()
             local char = GetChar()
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if root and hum and hum.Health > 0 and not Check("InLift") and not Check("InGame") then
+            local now = os.clock()
+            if root and hum and hum.Health > 0 and not Check("InLift") and not Check("InGame") and (now - lastLiftFire >= 0.5) then
+                lastLiftFire = now
                 AddedWaiting:FireServer()
             end
         end
@@ -1005,14 +1023,16 @@ end))
 
 -- Respawn & Lift Re-entry System
 TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+    local wasResetting = State.ResettingCharacter or State.ResettingForDifficulty
     State.ResettingCharacter = false
-    if State.ResettingForDifficulty then
+    State.ResettingForDifficulty = false
+    if State.AutoJoinLift and (wasResetting or State.AutoFarm or State.AutoPlay or State.SelectTASMaps)
+        and not (State.PracticeMap and State.PracticeMap.Parent) and not getgenv().TAS_Active then
         local root = char:WaitForChild("HumanoidRootPart", 10)
-        task.wait(0.5)
-        if root and not Session.Cancelled and State.AutoJoinLift then
+        task.wait(0.1)
+        if root and not Session.Cancelled and State.AutoJoinLift and not Check("InLift") and not Check("InGame") then
             AddedWaiting:FireServer()
         end
-        State.ResettingForDifficulty = false
     end
 end))
 
