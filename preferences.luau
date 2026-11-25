@@ -12,6 +12,7 @@ return function(runtime, http, filesystem)
 		ResetDelay = { 0, 0, 15 },
 		RebirthInterval = { 60, 60, 600 },
 		ChallengeInterval = { 600, 60, 1800 },
+		MaxVoteCost = { 50, 0, 200 },
 	}
 	local function valid(value, rule)
 		if type(rule[1]) == "boolean" then

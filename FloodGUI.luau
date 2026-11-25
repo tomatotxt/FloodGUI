@@ -128,6 +128,7 @@ local State = {
     EscapeSerial = 0,
     AlertsEnabled = true,
     HighlightOnlyMaps = {},
+    CatalogMaps = {},
     AutoPlay = false,
     FallbackToFarm = false,
     AutoFarm = false,
@@ -137,9 +138,22 @@ local State = {
     UIEnabled = true,
 
     Mode = "Farm",
+    VoteStrategy = "Lowest cost",
+    MinDifficulty = "None",
     TargetDifficulty = "Normal",
     TargetMapName = "",
+    PartialMapMatch = false,
+    RequireTASFile = false,
     EnforceDifficulty = false,
+    VoteDuringAutomation = true,
+    AllowPaidVotes = true,
+    MaxVoteCost = 50,
+    VoteMultiplier = 1,
+    SessionVotes = 0,
+    LastVotedMap = "",
+    LastVoteCost = 0,
+    CurrentBallotSummary = "",
+    LastVotePacket = nil,
     CurrentlyFarming = false,
     FarmPhase = "Idle",
     CurrentMapName = "",
@@ -163,7 +177,14 @@ getgenv().State = function() return State end
 pcall(function()
     local library = require(ReplicatedStorage:FindFirstChild("FE2Library", true))
     local official = {}
-    for _, map in pairs(library.getOfficialMapData()) do official[map.mapName] = true end
+    for _, map in pairs(library.getOfficialMapData()) do
+        if map.mapName then
+            official[map.mapName] = true
+            if not table.find(State.CatalogMaps, map.mapName) then
+                table.insert(State.CatalogMaps, map.mapName)
+            end
+        end
+    end
     local gui = LocalPlayer:WaitForChild("PlayerGui")
     local highlights = gui:FindFirstChild("Highlights", true)
     if highlights then
@@ -176,10 +197,14 @@ pcall(function()
                     if not official[name] and not table.find(State.HighlightOnlyMaps, name) then
                         table.insert(State.HighlightOnlyMaps, name)
                     end
+                    if not table.find(State.CatalogMaps, name) then
+                        table.insert(State.CatalogMaps, name)
+                    end
                 end
             end
         end
     end
+    table.sort(State.CatalogMaps)
 end)
 
 -- ==============================================================================
@@ -697,35 +722,123 @@ end
 
 -- IMMEDIATE VOTING LOGIC & TAS PLAYER INJECTION
 TrackConnection(NewMapVote.OnClientEvent:Connect(function(dataPacket)
-    if Session.Cancelled or (not State.AutoFarm and not State.AutoPlay and not State.SelectTASMaps) then return end
+    if Session.Cancelled or type(dataPacket) ~= "table" then return end
     local maps = dataPacket.mapData
     if not maps then return end
-
+    State.LastVotePacket = dataPacket
     local votes = dataPacket.pVotes or {}
-    local options = {TargetMapName = State.TargetMapName, TargetDifficulty = State.TargetDifficulty,
-        EnforceDifficulty = State.EnforceDifficulty, PreferMissingTAS = State.PreferMissingTAS,
-        Mode = State.SelectTASMaps and State.Mode or (State.AutoPlay and "Play" or "Farm")}
-    local targetMapData, lowestCost = Automation.select(maps, votes[tostring(LocalPlayer.UserId)], options, HasTASFile)
-
-    if targetMapData then
-        local key = GetSessionKey()
-        if key then
-            UpdMapVote:FireServer(key, targetMapData.ID, lowestCost)
-            Alert("Voted for Target Map: " .. targetMapData.name .. " (Cost: " .. lowestCost .. ")", "Success")
-        end
+    local myVote = votes[tostring(LocalPlayer.UserId)]
+    if Automation.describeBallot then
+        local _, summary = Automation.describeBallot(maps, myVote, votes)
+        State.CurrentBallotSummary = summary or ""
     end
-
-    -- Execution moved to background loop to avoid NewMapVote delays
-    if State.SelectTASMaps and State.Mode == "Record" and targetMapData then
-        ExecuteSecondaryScript("Record")
-    elseif State.SelectTASMaps and State.Mode == "Play" and targetMapData then
-        State.AutoPlay = true
-    elseif State.SelectTASMaps and State.Mode == "Farm" and targetMapData then
-        State.AutoFarm = true
-        State.AutoPlay = false
-        getgenv().TomatoAutoFarm = true
+    if State.CastVote then
+        State.CastVote(dataPacket, false)
     end
 end))
+
+function State.CastVote(dataPacket, forceManual)
+    if Session.Cancelled then return false end
+    if type(dataPacket) ~= "table" or not dataPacket.mapData then
+        if forceManual then
+            Alert("No active map ballot right now; wait for voting to open.", "Info")
+        end
+        return false
+    end
+    local passiveVote = (State.VoteDuringAutomation ~= false) and (State.AutoFarm or State.AutoPlay)
+    if not forceManual and not State.SelectTASMaps and not passiveVote then
+        return false
+    end
+
+    local maps = dataPacket.mapData
+    local votes = dataPacket.pVotes or {}
+    local myVote = votes[tostring(LocalPlayer.UserId)]
+    local effectiveMode = State.SelectTASMaps and (State.Mode or "Farm")
+        or (State.AutoPlay and "Play" or (State.AutoFarm and "Farm" or "Manual"))
+    local options = {
+        TargetMapName = State.TargetMapName,
+        PartialMapMatch = State.PartialMapMatch,
+        MinDifficulty = State.MinDifficulty,
+        TargetDifficulty = State.TargetDifficulty,
+        EnforceDifficulty = State.EnforceDifficulty,
+        PreferMissingTAS = State.PreferMissingTAS,
+        RequireTASFile = State.RequireTASFile,
+        AllowPaidVotes = State.AllowPaidVotes,
+        MaxVoteCost = State.MaxVoteCost,
+        VoteStrategy = State.VoteStrategy,
+        HighlightMaps = State.HighlightOnlyMaps,
+        Mode = effectiveMode,
+    }
+    local targetMapData, lowestCost = Automation.select(maps, myVote, options, HasTASFile, votes)
+    if not targetMapData then
+        if forceManual then
+            Alert("No map on the current ballot matched your voting filters.", "Warning")
+        end
+        return false
+    end
+
+    local key = GetSessionKey()
+    if key then
+        local maxBudget = (State.AllowPaidVotes == false) and 0 or (tonumber(State.MaxVoteCost) or 50)
+        local desiredVotes = math.clamp(math.floor(tonumber(State.VoteMultiplier) or 1), 1, 5)
+        UpdMapVote:FireServer(key, targetMapData.ID, lowestCost)
+        local totalCost = lowestCost
+        local castCount = 1
+        local simVoteCount = ((myVote and myVote.mapID == targetMapData.ID) and (tonumber(myVote.voteCount) or 1) or 0) + 1
+        for _ = 2, desiredVotes do
+            local simVote = {mapID = targetMapData.ID, voteCount = simVoteCount}
+            local extraCost = Automation.voteCost and Automation.voteCost(targetMapData, simVote) or 10
+            if totalCost + extraCost > maxBudget then
+                break
+            end
+            UpdMapVote:FireServer(key, targetMapData.ID, extraCost)
+            totalCost += extraCost
+            castCount += 1
+            simVoteCount += 1
+        end
+        State.SessionVotes = (State.SessionVotes or 0) + castCount
+        local diffTag = targetMapData.difficulty and (" [" .. tostring(targetMapData.difficulty) .. "]") or ""
+        State.LastVotedMap = tostring(targetMapData.name or targetMapData.ID) .. diffTag
+        State.LastVoteCost = totalCost
+        local multText = castCount > 1 and (tostring(castCount) .. "x, ") or ""
+        Alert("Voted for " .. tostring(targetMapData.name) .. diffTag .. " (" .. multText .. "Cost: " .. tostring(totalCost) .. ")", "Success")
+    elseif forceManual then
+        Alert("Could not obtain session passkey to cast vote.", "Error")
+        return false
+    end
+
+    if State.SelectTASMaps then
+        if State.Mode == "Record" then
+            ExecuteSecondaryScript("Record")
+        elseif State.Mode == "Play" then
+            State.AutoPlay = true
+        elseif State.Mode == "Farm" then
+            State.AutoFarm = true
+            State.AutoPlay = false
+            getgenv().TomatoAutoFarm = true
+        end
+    end
+    return true
+end
+
+function State.InspectBallot()
+    local packet = State.LastVotePacket
+    if type(packet) ~= "table" or not packet.mapData then
+        Alert("No active map ballot right now; wait for voting in the lobby.", "Info")
+        return
+    end
+    local votes = packet.pVotes or {}
+    local myVote = votes[tostring(LocalPlayer.UserId)]
+    if Automation.describeBallot then
+        local items, summary = Automation.describeBallot(packet.mapData, myVote, votes)
+        State.CurrentBallotSummary = summary or ""
+        if #items == 0 then
+            Alert("Current ballot has no displayed maps.", "Warning")
+        else
+            Alert("Ballot (" .. tostring(#items) .. " maps): " .. summary, "Info")
+        end
+    end
+end
 
 -- MAP LOAD PHASE (Handle Fallbacks & Difficulty Resetting)
 local function CollectMapItemsWhenReady(TargetMap)
@@ -765,6 +878,8 @@ local function ProcessMap(NewMap)
             return
         end
         MapReadyAt[NewMap] = MapReadyAt[NewMap] or os.clock()
+        State.LastVotePacket = nil
+        State.CurrentBallotSummary = ""
         if State.AutoCollect and not State.AutoFarm then
             CollectMapItemsWhenReady(NewMap)
         end
@@ -778,8 +893,10 @@ local function ProcessMap(NewMap)
 
         local currentRank, result = ResolveMapDifficulty(Settings)
         local targetRank = DIFFICULTY_RANKS[State.TargetDifficulty] or 999
+        local minRank = (State.MinDifficulty and State.MinDifficulty ~= "None" and DIFFICULTY_RANKS[State.MinDifficulty]) or 0
+        local outOfRange = currentRank > targetRank or (minRank > 0 and currentRank > 0 and currentRank < minRank)
 
-        if State.EnforceDifficulty and currentRank > targetRank then
+        if State.EnforceDifficulty and outOfRange then
             local resetDeadline = os.clock() + 25
             local lobbyTimeout = os.clock() + 5
             while not Session.Cancelled and NewMap.Parent == Multiplayer and os.clock() < resetDeadline do
@@ -793,7 +910,8 @@ local function ProcessMap(NewMap)
                 local root = character and character:FindFirstChild("HumanoidRootPart")
                 local h = character and character:FindFirstChildOfClass("Humanoid")
                 if Check("InGame") and root and not root.Anchored and h and h.Health > 0 then
-                    Alert("Map is too hard (" .. tostring(result) .. "). Resetting...", "Error")
+                    local reason = currentRank > targetRank and "too hard" or "below minimum difficulty"
+                    Alert("Map is " .. reason .. " (" .. tostring(result) .. "). Resetting...", "Error")
                     CompletedMaps[NewMap] = true
                     State.FarmPhase = "Resetting (difficulty)"
                     State.ResettingForDifficulty = true
@@ -1116,6 +1234,8 @@ end
 local Interface = Runtime.run("ui/main.luau")({
     runtime=Runtime, ui=UI, state=State, advanced=Advanced, recordings=Recordings, session=Session,
     noclip=Noclip, alert=Alert, execute=ExecuteSecondaryScript, stop=StopAutomation,
+    voteNow=function() if State.CastVote then State.CastVote(State.LastVotePacket, true) end end,
+    inspectBallot=function() if State.InspectBallot then State.InspectBallot() end end,
     cancelPlayerLaunch=function() Launches.cancel("player"); getgenv().IsTASPlaying = false end,
     savePreferences=SavePreferences,
     resetPreferences=function() Preferences.reset(State); UI.notifications=State.Notifications; UI.setScale(State.InterfaceScale); SavePreferences() end,

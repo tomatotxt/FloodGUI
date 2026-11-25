@@ -450,6 +450,12 @@ return function(sources)
 		execute = function(mode)
 			effects.execute = mode
 		end,
+		voteNow = function()
+			effects.votedNow = (effects.votedNow or 0) + 1
+		end,
+		inspectBallot = function()
+			effects.inspectedBallot = (effects.inspectedBallot or 0) + 1
+		end,
 		swimAvailable = true,
 		stop = function()
 			state.AutoPlay = false
@@ -478,14 +484,21 @@ return function(sources)
 			effects.unloaded = true
 		end,
 	})
-	for _, id in ipairs({ "home", "farm", "maps", "tas", "files", "movement", "advanced", "settings", "about" }) do
+	for _, id in ipairs({ "home", "farm", "voting", "maps", "tas", "files", "movement", "advanced", "settings", "about" }) do
 		assert(main.tabs[id], "Missing main tab: " .. id)
 	end
 	assert(#main.tabs.home.Window.Tabs == 8, "Expected focused task pages and shared Settings")
 	assert(main.tabs.home.Mode=="TAS" and main.tabs.files.Mode=="TAS" and main.tabs.tas.Mode=="TAS")
 	assert(main.tabs.farm.Mode=="Tools" and main.tabs.movement.Mode=="Tools" and main.tabs.advanced.Mode=="Tools")
-	assert(main.tabs.settings.Mode==nil and main.tabs.maps.Mode==nil and main.tabs.about==main.tabs.settings)
+	assert(main.tabs.settings.Mode==nil and main.tabs.voting.Mode==nil and main.tabs.voting.Name=="Voting" and main.tabs.maps==main.tabs.voting and main.tabs.about==main.tabs.settings)
 	assert(main.window.Mode=="TAS", "Start in the blue TAS workspace")
+	-- Primary Voting controls must appear uncollapsed at the top of the Voting tab.
+	assert(main.tabs.voting.Controls[1] == main.controls.VoteStatus, "VoteStatus card must lead the Voting tab")
+	assert(main.tabs.voting.Controls[2] == main.controls.AutoVote and main.controls.AutoVote == main.controls.SelectTASMaps, "AutoVote toggle must sit right at top of Voting tab")
+	assert(main.tabs.voting.Controls[3] == main.controls.VoteStrategy, "VoteStrategy dropdown must sit beneath AutoVote")
+	assert(main.tabs.voting.Controls[4] == main.controls.Mode, "After voting mode dropdown must sit in primary Voting group")
+	assert(main.tabs.voting.Controls[5] == main.controls.VoteNow, "VoteNow button must sit in primary Voting group")
+	assert(main.tabs.voting.Controls[6].Kind == "Section", "Secondary Voting sections follow below primary controls")
 	for _, key in ipairs({
 		"AutoPlay",
 		"FallbackToFarm",
@@ -538,6 +551,33 @@ return function(sources)
 	assert(not state.AutoFarm, "Cleared AutoFarm shortcut must ignore callbacks again")
 	main.window:Toggle(true)
 	main.controls.AutoFarm:Set(true)
+	-- Voting tab interactive behavior: roulette, immediate vote on active ballot, filter exclusivity, and difficulty clamping.
+	main.controls.PreferMissingTAS:Set(true)
+	assert(state.PreferMissingTAS and not state.RequireTASFile)
+	main.controls.RequireTASFile:Set(true)
+	main.sync()
+	assert(state.RequireTASFile and not state.PreferMissingTAS and not main.controls.PreferMissingTAS:Get(), "RequireTASFile and PreferMissingTAS must be mutually exclusive")
+	main.controls.RequireTASFile:Set(false)
+	main.controls.MinDifficulty:Set("Crazy")
+	main.sync()
+	assert(state.TargetDifficulty == "Crazy" and main.controls.TargetDifficulty:Get() == "Crazy", "Raising MinDifficulty above TargetDifficulty must clamp TargetDifficulty upward")
+	main.controls.MinDifficulty:Set("None")
+	main.controls.TargetDifficulty:Set("Normal")
+	main.controls.RandomTarget.Options.Callback()
+	local firstRoulette = state.TargetMapName
+	assert(firstRoulette == "Map A" or firstRoulette == "Map B", "Map roulette must pick from catalog maps")
+	main.controls.RandomTarget.Options.Callback()
+	assert(state.TargetMapName ~= firstRoulette and main.controls.TargetMapName:Get() == state.TargetMapName, "Map roulette must cycle to a different map when repeated")
+	main.controls.ClearTarget.Options.Callback()
+	assert(state.TargetMapName == "", "ClearTarget must reset TargetMapName")
+	state.LastVotePacket = { mapData = {} }
+	main.controls.AutoVote:Set(true)
+	assert(effects.votedNow == 1, "Enabling AutoVote while a ballot is open must cast an immediate vote")
+	main.controls.VoteNow.Options.Callback()
+	main.controls.InspectBallot.Options.Callback()
+	assert(effects.votedNow == 2 and effects.inspectedBallot == 1, "VoteNow and InspectBallot buttons must dispatch callbacks")
+	state.LastVotePacket = nil
+	main.controls.AutoVote:Set(false)
 	main.controls.Noclip:Set(true)
 	assert(effects.noclip)
 	state.Noclip = false

@@ -40,6 +40,13 @@ section:NewToggle("Auto-Play (TAS)", "Automatically plays TAS runs.", function(e
 	end
 end)
 
+section:NewToggle("Auto-Vote", "Votes using your configured strategy and filters.", function(enabled)
+	state.SelectTASMaps = enabled
+	if enabled and state.CastVote and state.LastVotePacket then
+		pcall(state.CastVote, state.LastVotePacket, true)
+	end
+end)
+
 section:NewToggle("Noclip", "Walk through walls.", function(enabled)
 	state.Noclip = enabled
 end)

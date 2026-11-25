@@ -1,11 +1,27 @@
 return function(context)
 	local UI, State, Advanced = context.ui, context.state, context.advanced
+	local defaultVoteState = {
+		VoteStrategy = "Lowest cost",
+		MinDifficulty = "None",
+		PartialMapMatch = false,
+		RequireTASFile = false,
+		VoteDuringAutomation = true,
+		AllowPaidVotes = true,
+		MaxVoteCost = 50,
+		VoteMultiplier = 1,
+	}
+	for k, v in pairs(defaultVoteState) do
+		if State[k] == nil then
+			State[k] = v
+		end
+	end
+	local diffRanks = { Easy = 1, Normal = 2, Hard = 3, Insane = 4, Crazy = 5, ["Crazy+"] = 6 }
 	local window = UI.window("main", "FloodGUI", "FE2 | live", Enum.KeyCode.J)
 	local controls, bindings, tabs = {}, {}, {}
 	local pages = {}
 	local groups = {
 		home={"Create & Play","Recording and playback","TAS",1}, tas={"Playback","Playback controls","TAS",2},
-		maps={"Maps","Choose a map",nil,4}, files={"Recordings","Your recording library","TAS",3},
+		voting={"Voting","Auto vote",nil,4}, maps={"Voting","Auto vote",nil,4}, files={"Recordings","Your recording library","TAS",3},
 		farm={"Farming","Auto farm","Tools",1}, movement={"Movement","Speed and jumping","Tools",2},
 		advanced={"Advanced","Optional tools","Tools",3}, settings={"Settings","Appearance",nil,5}, about={"Settings","Credits and help",nil,5},
 	}
@@ -16,8 +32,12 @@ return function(context)
 			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		if id~="advanced" and id~="farm" then result:Section(group[2], id=="about")end
+		if id~="advanced" and id~="farm" and id~="voting" and id~="maps" then result:Section(group[2], id=="about")end
 		tabs[id] = result
+		if id == "voting" or id == "maps" then
+			tabs.voting = result
+			tabs.maps = result
+		end
 		return result
 	end
 	local function set(key, value)
@@ -49,6 +69,22 @@ return function(context)
 				getgenv().TomatoAutoFarm = false
 			elseif getgenv().FloodGUIStopPlayer then
 				getgenv().FloodGUIStopPlayer(false)
+			end
+		elseif key == "SelectTASMaps" then
+			if value and State.LastVotePacket ~= nil and context.voteNow then
+				context.voteNow()
+			end
+		elseif key == "PreferMissingTAS" and value then
+			State.RequireTASFile = false
+		elseif key == "RequireTASFile" and value then
+			State.PreferMissingTAS = false
+		elseif key == "MinDifficulty" and value ~= "None" and State.TargetDifficulty ~= "None" then
+			if (diffRanks[value] or 0) > (diffRanks[State.TargetDifficulty] or 999) then
+				State.TargetDifficulty = value
+			end
+		elseif key == "TargetDifficulty" and value ~= "None" and State.MinDifficulty and State.MinDifficulty ~= "None" then
+			if (diffRanks[value] or 999) < (diffRanks[State.MinDifficulty] or 0) then
+				State.MinDifficulty = value
 			end
 		elseif key == "AutoZipline" then
 			if context.zipline then context.zipline.setEnabled(value) end
@@ -184,50 +220,219 @@ return function(context)
 		{ Min = 60, Max = 600, Step = 15, Suffix = " s" }
 	)
 
-	local maps = tab("maps", "Maps", "map", "Voting, targets, and difficulty")
-	bind(maps, "Toggle", "SelectTASMaps", "Select target maps", "Vote using the mode and filters below.")
+	local voting = tab("voting", "Voting", "map", "Auto vote, strategies, sniping, and coin budget")
+	local voteStatus = voting:Paragraph({
+		Name = "Vote status",
+		Content = "Auto vote: OFF | Votes: 0",
+	})
+	controls.VoteStatus = voteStatus
+	local autoVoteToggle = bind(
+		voting,
+		"Toggle",
+		"SelectTASMaps",
+		"Auto vote",
+		"Automatically vote on every map ballot using your strategy and filters."
+	)
+	controls.AutoVote = autoVoteToggle
 	bind(
-		maps,
+		voting,
+		"Dropdown",
+		"VoteStrategy",
+		"Vote strategy",
+		"How FloodGUI chooses among eligible maps on the board.",
+		{
+			Options = {
+				"Lowest cost",
+				"Easiest",
+				"Hardest",
+				"Most popular",
+				"Underdog",
+				"Highlight / Community",
+				"Random",
+			},
+		}
+	)
+	bind(
+		voting,
 		"Dropdown",
 		"Mode",
-		"After selecting a map",
-		"Farm, replay a recording, or open the creator.",
-		{ Options = { "Farm", "Play", "Record" } }
+		"After voting",
+		"Manual votes only; Farm, Play, or Record also runs that mode when your map loads.",
+		{ Options = { "Manual", "Farm", "Play", "Record" } }
 	)
+	button(
+		voting,
+		"VoteNow",
+		"Vote now",
+		"Cast a vote immediately on the active lobby ballot.",
+		"play",
+		function()
+			if context.voteNow then
+				context.voteNow()
+			elseif context.alert then
+				context.alert("No active map ballot right now.", "Info")
+			end
+			sync()
+		end,
+		true
+	)
+
+	voting:Section("Map sniping & roulette", true)
 	bind(
-		maps,
+		voting,
 		"Input",
 		"TargetMapName",
-		"Exact map target",
-		"Leave empty to choose from eligible maps.",
-		{ Placeholder = "Map name" }
+		"Target map",
+		"Leave empty to vote by strategy, or enter a map name to snipe.",
+		{ Placeholder = "Map name (e.g. Blue Moon)" }
 	)
-	button(maps, "ClearTarget", "Clear map target", nil, "x", function()
+	bind(
+		voting,
+		"Toggle",
+		"PartialMapMatch",
+		"Allow partial map name",
+		"Match any ballot map containing your target text (e.g. 'boreas')."
+	)
+	local roulettePool
+	button(
+		voting,
+		"RandomTarget",
+		"Random map roulette",
+		"Pick a random map from FE2 / catalog as your snipe target.",
+		"rotate-ccw",
+		function()
+			if not roulettePool then
+				roulettePool = {}
+				local seen = {}
+				for _, m in ipairs(State.CatalogMaps or {}) do
+					if type(m) == "string" and m ~= "" and not seen[m] then
+						seen[m] = true
+						table.insert(roulettePool, m)
+					end
+				end
+				if context.runtime and context.runtime.catalog then
+					local ok, entries = pcall(context.runtime.catalog)
+					if ok and type(entries) == "table" then
+						for _, entry in ipairs(entries) do
+							local raw = type(entry) == "table" and entry.name or nil
+							if type(raw) == "string" then
+								local clean = raw:gsub("%.fe2tomatas$", ""):gsub("%.json$", "")
+								if clean ~= "" and not seen[clean] then
+									seen[clean] = true
+									table.insert(roulettePool, clean)
+								end
+							end
+						end
+					end
+				end
+				table.sort(roulettePool)
+			end
+			if #roulettePool == 0 then
+				if context.alert then
+					context.alert("No map list available for roulette yet.", "Warning")
+				end
+				return
+			end
+			local pick = roulettePool[math.random(#roulettePool)]
+			if #roulettePool > 1 and pick == State.TargetMapName then
+				local idx = table.find(roulettePool, pick) or 1
+				pick = roulettePool[(idx % #roulettePool) + 1]
+			end
+			set("TargetMapName", pick)
+			sync()
+			if context.alert then
+				context.alert("Map roulette target: " .. pick, "Info")
+			end
+		end
+	)
+	button(voting, "ClearTarget", "Clear map target", "Return to strategy-based voting.", "x", function()
 		set("TargetMapName", "")
 		sync()
 	end)
+
+	voting:Section("Difficulty & TAS filters", true)
 	bind(
-		maps,
+		voting,
+		"Dropdown",
+		"MinDifficulty",
+		"Minimum difficulty",
+		"None allows all difficulties; raise to skip easy maps.",
+		{ Options = { "None", "Easy", "Normal", "Hard", "Insane", "Crazy", "Crazy+" } }
+	)
+	bind(
+		voting,
+		"Dropdown",
+		"TargetDifficulty",
+		"Maximum difficulty",
+		"None allows all difficulties up to Crazy+.",
+		{ Options = { "None", "Easy", "Normal", "Hard", "Insane", "Crazy", "Crazy+" } }
+	)
+	bind(
+		voting,
+		"Toggle",
+		"EnforceDifficulty",
+		"Enforce difficulty range",
+		"Filter ballot choices and reset/requeue if an out-of-range map loads."
+	)
+	bind(
+		voting,
 		"Toggle",
 		"PreferMissingTAS",
 		"Prefer unrecorded maps",
 		"Prioritize maps that still need a TAS recording."
 	)
-	maps:Section("Difficulty")
 	bind(
-		maps,
-		"Dropdown",
-		"TargetDifficulty",
-		"Maximum difficulty",
-		"None allows all difficulties.",
-		{ Options = { "None", "Easy", "Normal", "Hard", "Insane", "Crazy", "Crazy+" } }
+		voting,
+		"Toggle",
+		"RequireTASFile",
+		"Only recorded TAS maps",
+		"Only vote for maps that already have a local or bundled TAS recording."
+	)
+
+	voting:Section("Vote power & coin budget", true)
+	bind(
+		voting,
+		"Toggle",
+		"VoteDuringAutomation",
+		"Auto-vote while farming / TAS",
+		"Cast votes using these filters while Auto-Farm or TAS Auto-Play is running."
 	)
 	bind(
-		maps,
+		voting,
 		"Toggle",
-		"EnforceDifficulty",
-		"Enforce difficulty limit",
-		"Reset and requeue when a harder map is loaded."
+		"AllowPaidVotes",
+		"Allow paid / unlock votes",
+		"Turn off to strictly cast free (0 coin) votes only."
+	)
+	bind(
+		voting,
+		"Slider",
+		"MaxVoteCost",
+		"Max coins per ballot",
+		"Maximum coins allowed for map unlocks or extra stacked votes.",
+		{ Min = 0, Max = 200, Step = 5, Suffix = " coins" }
+	)
+	bind(
+		voting,
+		"Slider",
+		"VoteMultiplier",
+		"Vote power (stack votes)",
+		"Stack up to 5 votes on your chosen map (extra votes spend coins within budget).",
+		{ Min = 1, Max = 5, Step = 1, Suffix = "x" }
+	)
+	button(
+		voting,
+		"InspectBallot",
+		"Inspect current ballot",
+		"Show every map, difficulty, vote count, and coin cost on the active ballot.",
+		"info",
+		function()
+			if context.inspectBallot then
+				context.inspectBallot()
+			elseif context.alert then
+				context.alert("No active map ballot right now.", "Info")
+			end
+		end
 	)
 
 	local tas = tab("tas", "TAS", "film", "Playback and creator preferences")
@@ -433,6 +638,7 @@ return function(context)
 	settings:Section("Keyboard shortcuts", true)
 	for _, item in ipairs({
 		{ "AutoFarm", "Auto farm", Enum.KeyCode.Unknown },
+		{ "SelectTASMaps", "Auto vote", Enum.KeyCode.Unknown },
 		{ "GodMode", "Infinite air / health", Enum.KeyCode.R },
 		{ "Noclip", "Noclip", Enum.KeyCode.G },
 		{ "AirJump", "Air jump", Enum.KeyCode.M },
@@ -458,8 +664,8 @@ return function(context)
 				local nextVal = not State[item[1]]
 				set(item[1], nextVal)
 				sync()
-				if item[1] == "AutoFarm" and context.alert then
-					context.alert("Auto farm " .. (nextVal and "enabled." or "disabled."), nextVal and "Success" or "Info")
+				if (item[1] == "AutoFarm" or item[1] == "SelectTASMaps") and context.alert then
+					context.alert(item[2] .. " " .. (nextVal and "enabled." or "disabled."), nextVal and "Success" or "Info")
 				end
 			end,
 		})
@@ -560,6 +766,25 @@ return function(context)
 		local last = (State.LastEscapeTime and State.LastEscapeTime ~= "") and (" (" .. tostring(State.LastEscapeTime) .. ")") or ""
 		return phase .. mapPart .. " | Escapes: " .. tostring(escapes) .. last
 	end
+	local function formatVoteSummary()
+		local activeText
+		if State.SelectTASMaps then
+			activeText = "Auto vote: ON (" .. tostring(State.VoteStrategy or "Lowest cost") .. " -> " .. tostring(State.Mode or "Farm") .. ")"
+		elseif State.VoteDuringAutomation ~= false and (State.AutoFarm or State.AutoPlay) then
+			activeText = "Auto vote: Passive (" .. tostring(State.VoteStrategy or "Lowest cost") .. ")"
+		else
+			activeText = "Auto vote: OFF"
+		end
+		local targetPart = (State.TargetMapName and State.TargetMapName ~= "") and (" | Target: " .. tostring(State.TargetMapName)) or ""
+		local votes = tonumber(State.SessionVotes) or 0
+		local detail = ""
+		if State.CurrentBallotSummary and State.CurrentBallotSummary ~= "" then
+			detail = "\nBallot: " .. tostring(State.CurrentBallotSummary)
+		elseif State.LastVotedMap and State.LastVotedMap ~= "" then
+			detail = "\nLast vote: " .. tostring(State.LastVotedMap) .. " (" .. tostring(State.LastVoteCost or 0) .. " coins)"
+		end
+		return activeText .. targetPart .. " | Votes: " .. tostring(votes) .. detail
+	end
 	local function formatWindowStatus()
 		if getgenv().TAS_Active then
 			return "Creator open"
@@ -575,7 +800,7 @@ return function(context)
 		elseif State.AutoPlay then
 			return "TAS waiting"
 		elseif State.SelectTASMaps then
-			return "Map target on"
+			return "Auto vote on"
 		end
 		return "Idle"
 	end
@@ -584,6 +809,9 @@ return function(context)
 			sync()
 			if farmStatus and farmStatus.Set then
 				farmStatus:Set(formatFarmSummary(), true)
+			end
+			if voteStatus and voteStatus.Set then
+				voteStatus:Set(formatVoteSummary(), true)
 			end
 			window:SetStatus(formatWindowStatus())
 			task.wait(0.3)

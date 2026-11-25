@@ -28,16 +28,32 @@ return function(source)
 
     local vote
     env.NewMapVote={OnClientEvent={Connect=function(_,fn)vote=fn;return {}end}}
-    local sent
-    env.UpdMapVote={FireServer=function(_,key,id,cost)sent={key,id,cost}end}
+    local sent,sentLog=nil,{}
+    env.UpdMapVote={FireServer=function(_,key,id,cost)sent={key,id,cost};table.insert(sentLog,{key,id,cost})end}
     env.GetSessionKey=function()return -12 end
     env.Alert=function()end
     env.HasTASFile=function()return false end
-    env.Automation={select=function()return {ID=9,name="Test"},0 end}
+    env.Automation={
+        select=function()return {ID=9,name="Test",difficulty="Crazy",extraVoteCost=10},0 end,
+        voteCost=function(m,v)return math.clamp((m.extraVoteCost or 0)+((v and v.voteCount or 1)-1)*10,0,50) end,
+    }
     env.State.SelectTASMaps=true;env.State.Mode="Farm";env.State.AutoFarm=false;env.State.AutoPlay=false
     compile(section("TrackConnection(NewMapVote.OnClientEvent:Connect(function(dataPacket)","-- MAP LOAD PHASE"))
     vote({mapData={},pVotes={}})
     assert(sent[2]==9 and env.State.AutoFarm and globals.TomatoAutoFarm,"Selected Farm never armed the map-arrival action")
+    -- Manual post-vote mode votes cleanly (including multi-vote stacking within MaxVoteCost) without enabling AutoFarm or AutoPlay.
+    table.clear(sentLog)
+    env.State.AutoFarm=false;env.State.AutoPlay=false;globals.TomatoAutoFarm=false
+    env.State.Mode="Manual";env.State.VoteMultiplier=3;env.State.MaxVoteCost=15;env.State.AllowPaidVotes=true
+    vote({mapData={},pVotes={}})
+    assert(#sentLog==2 and sentLog[1][3]==0 and sentLog[2][3]==10,"VoteMultiplier must stack extra votes up to MaxVoteCost")
+    assert(not env.State.AutoFarm and not env.State.AutoPlay and not globals.TomatoAutoFarm,"Manual voting mode must not start AutoFarm or AutoPlay")
+    -- Disabling VoteDuringAutomation prevents passive voting while AutoFarm is on and AutoVote is off.
+    table.clear(sentLog)
+    env.State.SelectTASMaps=false;env.State.AutoFarm=true;env.State.VoteDuringAutomation=false
+    vote({mapData={},pVotes={}})
+    assert(#sentLog==0,"VoteDuringAutomation=false must suppress passive voting when AutoVote is off")
+    env.State.VoteDuringAutomation=true;env.State.VoteMultiplier=1
 
     -- A root-moving collection can be suspended when the creator takes over.
     local collection=compile(section("local ActiveCollectionCleanup","local function ExecuteSecondaryScript").."\nreturn {collect=CollectMapItems,cancel=CancelCollection}")
