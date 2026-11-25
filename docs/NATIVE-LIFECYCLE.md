@@ -1,36 +1,31 @@
 # Native FE2 lifecycle, button tracking, and outcome confirmation
 
-FloodGUI integrates with Flood Escape 2's native client remotes identified through reverse engineering of `CL_MAIN_GameScript`, `CL_Buttons`, and `CL_QuickInfo`.
+FloodGUI combines physical world-zone authority with Flood Escape 2's native client remotes (`CL_MAIN_GameScript`, `CL_Buttons`, and `CL_QuickInfo`) so round transitions, lift queueing, button navigation, and escape confirmation stay synchronized across solo and public servers.
 
-## Round lifecycle and phase tracking
+## Physical zone truth vs. UI round state
 
-Previously, the script used coordinate thresholds (`hrp.Position.X < 50 and hrp.Position.Z > 70` for lift, and `hrp.Position.X > 50` for in-game) to guess player state. In complex maps or custom lobbies, coordinate tests can produce false positives or negatives.
+FE2's lobby, waiting lift, and active map zones occupy disjoint regions in world space:
+- **Lobby:** `X < 50` and `Z <= 70`
+- **Waiting lift:** `X < 50` and `Z > 70` (around `(-25, -144, 139)`)
+- **Active map:** `X > 50` (spawned far from the lobby)
 
-FE2's client drives its state machine from `ReplicatedStorage.Remote.UpdateGameState.OnClientEvent`:
-- `nil` or lobby: waiting UI hidden, lobby waters active.
-- `"waiting"`: exit-lift waiting state. The client fires `AddedWaiting` and positions `HumanoidRootPart` at `Workspace.Lobby.WaitingArea.WaitTeleport.CFrame`.
-- `"loading"`: map preparation.
-- `"ingame"`: round active.
+`ReplicatedStorage.Remote.UpdateGameState` (`gamestate.luau`) broadcasts server UI phases (`"waiting"`, `"loading"`, `"ingame"`, etc.), which apply to the round lifecycle rather than an individual character's physical position (for example, `"loading"` fires while players are still standing inside the lift, and `"ingame"` can persist for other survivors after a local reset).
 
-`gamestate.luau` tracks these transitions. `Check("InLift")` and `Check("InGame")` consult native phase state first, falling back to coordinate checks only if `UpdateGameState` is missing or has not yet fired.
+Accordingly:
+- `Check("InLift")` and `Check("InGame")` use `HumanoidRootPart.Position` as ground truth for the local character's location.
+- Lift entry calls `AddedWaiting:FireServer()` cleanly when the character is alive in the lobby (`not Check("InLift") and not Check("InGame")`) without overwriting `HumanoidRootPart.CFrame` onto `WaitTeleport`.
+- `StartAutoFarm` uses a two-stage round-start handshake:
+  1. Wait for physical map arrival (`Check("InGame")`) without setting `CurrentlyFarming` prematurely (so lobby players are never locked out of joining the next lift).
+  2. Wait for FE2's intro countdown to release `HumanoidRootPart.Anchored == false` before capturing spawn, collecting `_LostPage` / `_Rescue`, or moving to buttons.
 
-## Button progress and active goal targeting
-
-FE2's button system is coordinated across two main remotes:
-- `ReplicatedStorage.Remote.UpdIngameStats.OnClientEvent`: broadcasts `stats.currentButton`, the number of buttons remaining before the exit unlocks. When `currentButton == 0`, all buttons are complete and the exit opens.
-- `ReplicatedStorage.Remote.UpdGoalLocator.OnClientEvent`: broadcasts `(goal, buttonPart, locatorGui, nextGoalPart, nextLocatorGui)`. When a button is active, `buttonPart` references the current button `BasePart`.
+## Button scanning and exit navigation
 
 In `StartAutoFarm`:
-1. Remaining button count from `UpdIngameStats` determines whether buttons are still active. `ExitRegion` is only targeted once `currentButton == 0` (or after all scanned buttons are cleared).
-2. The active button part from `UpdGoalLocator` is prioritized as the target before falling back to blind descendant scans.
-3. Exit navigation sets `root.CFrame = exit.CFrame`, centering the character directly inside `ExitRegion.Size * 0.5` object space to reliably satisfy `CL_MAIN_GameScript`'s native half-bounds check (`PointToObjectSpace`).
+1. **Button phase:** Scans map models (both uppercase-obfuscated and `Button*` models, plus dynamic `DescendantAdded` additions) for active `TouchInterest` + `BillboardGui` hitboxes, with an automatic `TouchInterest`-only fallback after 2.5s for no-locator map events. Between scans, `HumanoidRootPart.Anchored = true` with zeroed linear/angular velocity prevents `Noclip(true)` from dropping the character through the floor into the void.
+2. **Exit phase:** As soon as FE2 spawns `ExitRegion` into `Map`, `StartAutoFarm` disables `Noclip(false)`, focuses `CurrentCamera.CameraSubject` on `ExitRegion`, and samples interior points via `GetRandomPointInPart(exit)` on `RunService.Heartbeat` until escape is confirmed (or returns to `initialPosition` when `PlayAfterButtons` is enabled).
 
 ## Server-confirmed win / escape outcome
 
-Previously, win tracking checked `Alert.OnClientEvent` for message strings matching `"escaped"` or `"survived"`. This approach depended on localized English text and alert timing.
-
-Authoritative round completion is signaled by `ReplicatedStorage.Remote.Survived.OnClientEvent(survived, escapeTime, runXP)`:
-- `survived == true` confirms that the server verified the escape.
-- `escapeTime` is the official round duration recorded by the game.
-
-FloodGUI hooks `Survived.OnClientEvent` directly to increment `State.EscapeSerial` and display the official escape time, while retaining `Alert.OnClientEvent` as a secondary fallback.
+Round completion is tracked redundantly via:
+- `ReplicatedStorage.Remote.Survived.OnClientEvent(survived, escapeTime, runXP)` (`survived == true` records the official `escapeTime` and increments `SessionEscapes` / `EscapeSerial`).
+- `ReplicatedStorage.Remote.Alert.OnClientEvent` matching `"escaped"` or `"survived"` as a secondary fallback.

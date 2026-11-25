@@ -16,7 +16,7 @@ return function(context)
 			result=window:Tab({Name=group[1],Icon=icon,Desc=description,Mode=group[3],Order=group[4]})
 			pages[group[1]]=result
 		end
-		if id~="advanced" then result:Section(group[2], id=="about")end
+		if id~="advanced" and id~="farm" then result:Section(group[2], id=="about")end
 		tabs[id] = result
 		return result
 	end
@@ -28,6 +28,8 @@ return function(context)
 		if key == "AutoFarm" then
 			if value and context.cancelPlayerLaunch then context.cancelPlayerLaunch() end
 			State.PracticeMap = nil
+			State.FarmPhase = value and "Starting" or "Idle"
+			if not value then State.CurrentMapName = "" end
 			getgenv().TomatoAutoFarm = value
 			if value then
 				State.AutoPlay = false
@@ -123,10 +125,56 @@ return function(context)
 	button(home,"Stop","Stop automation","Stops farming, playback and other automation.","square",stop)
 
 	local farm = tab("farm", "Farming", "sprout", "Automation and round timing")
-	bind(farm, "Toggle", "AutoFarm", "Auto farm", "Navigate through map buttons and the exit.")
-	farm:Section("Collection and progression")
-	bind(farm, "Toggle", "AutoCollect", "Collect pages and escapees", "Runs independently of farm and TAS playback.")
-	bind(farm, "Toggle", "AutoRebirth", "Auto rebirth", "Periodically send a rebirth request when enabled.")
+	local farmStatus = farm:Paragraph({
+		Name = "Farm status",
+		Content = "Idle | Escapes: 0",
+	})
+	controls.FarmStatus = farmStatus
+	bind(farm, "Toggle", "AutoFarm", "Auto farm", "Navigate map buttons and the exit automatically.")
+	bind(
+		farm,
+		"Toggle",
+		"AutoJoinLift",
+		"Automatically join lift",
+		"Enter the waiting lift from the lobby while farm, TAS, or map selection is on."
+	)
+	button(farm, "StopTools", "Stop automation", "Stops active farming, playback, and auxiliary loops.", "square", stop)
+
+	farm:Section("Round behavior", true)
+	bind(
+		farm,
+		"Toggle",
+		"ResetAfterEscape",
+		"Reset after escape",
+		"Respawn after server escape confirmation to requeue faster in public servers."
+	)
+	bind(
+		farm,
+		"Slider",
+		"ResetDelay",
+		"Reset delay",
+		"Wait after a confirmed escape before respawning.",
+		{ Min = 0, Max = 15, Step = 0.5, Suffix = " s" }
+	)
+	bind(
+		farm,
+		"Toggle",
+		"PlayAfterButtons",
+		"Finish the map manually",
+		"Press all buttons, return to spawn, and hand movement back to you."
+	)
+	bind(
+		farm,
+		"Slider",
+		"StartDelay",
+		"Start delay",
+		"Wait after round start before farm movement begins.",
+		{ Min = 0, Max = 30, Step = 0.5, Suffix = " s" }
+	)
+
+	farm:Section("Collection and progression", true)
+	bind(farm, "Toggle", "AutoCollect", "Collect pages and escapees", "Grab Lost Page and Escapee after round start.")
+	bind(farm, "Toggle", "AutoRebirth", "Auto rebirth", "Send rebirth requests between rounds when ready.")
 	bind(
 		farm,
 		"Slider",
@@ -135,47 +183,6 @@ return function(context)
 		"Seconds between rebirth attempts.",
 		{ Min = 60, Max = 600, Step = 15, Suffix = " s" }
 	)
-
-	farm:Section("Round behavior", true)
-	bind(
-		farm,
-		"Toggle",
-		"PlayAfterButtons",
-		"Finish the map manually",
-		"Collect buttons, return to the starting point, then hand control back to you."
-	)
-	bind(
-		farm,
-		"Slider",
-		"StartDelay",
-		"Start delay",
-		"Wait before farm movement begins.",
-		{ Min = 0, Max = 30, Step = 0.5, Suffix = " s" }
-	)
-	bind(
-		farm,
-		"Toggle",
-		"ResetAfterEscape",
-		"Reset after escape",
-		"Wait for server escape confirmation before resetting."
-	)
-	bind(
-		farm,
-		"Slider",
-		"ResetDelay",
-		"Reset delay",
-		"Delay after a confirmed escape.",
-		{ Min = 0, Max = 15, Step = 0.5, Suffix = " s" }
-	)
-	bind(
-		farm,
-		"Toggle",
-		"AutoJoinLift",
-		"Automatically join lift",
-		"Queue again while farm, TAS, or map selection is enabled."
-	)
-	farm:Section("Session",true)
-	button(farm,"StopTools","Stop automation","Stops active automation across both modes.","square",stop)
 
 	local maps = tab("maps", "Maps", "map", "Voting, targets, and difficulty")
 	bind(maps, "Toggle", "SelectTASMaps", "Select target maps", "Vote using the mode and filters below.")
@@ -425,6 +432,7 @@ return function(context)
 	)
 	settings:Section("Keyboard shortcuts", true)
 	for _, item in ipairs({
+		{ "AutoFarm", "Auto farm", Enum.KeyCode.Unknown },
 		{ "GodMode", "Infinite air / health", Enum.KeyCode.R },
 		{ "Noclip", "Noclip", Enum.KeyCode.G },
 		{ "AirJump", "Air jump", Enum.KeyCode.M },
@@ -437,8 +445,12 @@ return function(context)
 				if getgenv().TAS_Active then
 					return
 				end
-				set(item[1], not State[item[1]])
+				local nextVal = not State[item[1]]
+				set(item[1], nextVal)
 				sync()
+				if item[1] == "AutoFarm" and context.alert then
+					context.alert("Auto farm " .. (nextVal and "enabled." or "disabled."), nextVal and "Success" or "Info")
+				end
 			end,
 		})
 	end
@@ -527,10 +539,43 @@ return function(context)
 		TAS={Accent=Color3.fromRGB(70,150,255),Header=Color3.fromRGB(25,28,36)},
 		Tools={Accent=Color3.fromRGB(245,105,110),Header=Color3.fromRGB(36,25,29)},
 	})
+	local function formatFarmSummary()
+		local phase = State.CurrentlyFarming and (State.FarmPhase or "Active")
+			or State.AutoFarm and (State.FarmPhase and State.FarmPhase ~= "Idle" and State.FarmPhase or "Waiting")
+			or (State.FarmPhase == "Manual finish" and "Manual finish" or "Idle")
+		local mapPart = (State.CurrentMapName and State.CurrentMapName ~= "" and (State.CurrentlyFarming or State.AutoFarm))
+			and (" - " .. tostring(State.CurrentMapName))
+			or ""
+		local escapes = tonumber(State.SessionEscapes) or 0
+		local last = (State.LastEscapeTime and State.LastEscapeTime ~= "") and (" (" .. tostring(State.LastEscapeTime) .. ")") or ""
+		return phase .. mapPart .. " | Escapes: " .. tostring(escapes) .. last
+	end
+	local function formatWindowStatus()
+		if getgenv().TAS_Active then
+			return "Creator open"
+		elseif getgenv().IsTASPlaying then
+			return "Playing TAS"
+		elseif State.CurrentlyFarming then
+			local mapName = State.CurrentMapName and State.CurrentMapName ~= "" and (" - " .. tostring(State.CurrentMapName)) or ""
+			return (State.FarmPhase or "Farming") .. mapName
+		elseif State.AutoFarm then
+			return (State.FarmPhase and State.FarmPhase ~= "" and State.FarmPhase ~= "Idle")
+				and ("Farm - " .. tostring(State.FarmPhase))
+				or "Farm waiting"
+		elseif State.AutoPlay then
+			return "TAS waiting"
+		elseif State.SelectTASMaps then
+			return "Map target on"
+		end
+		return "Idle"
+	end
 	task.spawn(function()
 		while not context.session.Cancelled and not window._destroyed do
 			sync()
-			window:SetStatus((getgenv().TAS_Active and "Creator open" or getgenv().IsTASPlaying and "Playing" or State.AutoPlay and "TAS waiting" or "Idle")..(State.AutoFarm and " | Farm on" or ""))
+			if farmStatus and farmStatus.Set then
+				farmStatus:Set(formatFarmSummary(), true)
+			end
+			window:SetStatus(formatWindowStatus())
 			task.wait(0.3)
 		end
 	end)

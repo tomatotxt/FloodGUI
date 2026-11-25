@@ -140,6 +140,10 @@ local State = {
     TargetMapName = "",
     EnforceDifficulty = false,
     CurrentlyFarming = false,
+    FarmPhase = "Idle",
+    CurrentMapName = "",
+    SessionEscapes = 0,
+    LastEscapeTime = "",
     Escaped = false,
     ResettingForDifficulty = false,
 
@@ -367,6 +371,22 @@ end
 local CompletedMaps = setmetatable({}, {__mode = "k"})
 local ActiveMapTasks = setmetatable({}, {__mode = "k"})
 local MapReadyAt = setmetatable({}, {__mode = "k"})
+local RANK_BY_NUMBER = {[1] = 1, [2] = 2, [3] = 3, [4] = 4, [5] = 5, [6] = 6}
+local NAME_BY_NUMBER = {[1] = "Easy", [2] = "Normal", [3] = "Hard", [4] = "Insane", [5] = "Crazy", [6] = "Crazy+"}
+
+local function GetCamera()
+    return (Workspace and Workspace.CurrentCamera) or Camera
+end
+
+local function ZeroVelocity(part)
+    if not part or not Vector3 then return end
+    local zero = Vector3.zero
+    part.Velocity = zero
+    pcall(function()
+        part.AssemblyLinearVelocity = zero
+        part.AssemblyAngularVelocity = zero
+    end)
+end
 
 local function GetRandomPointInPart(Part)
     local Size = Part.Size
@@ -378,6 +398,17 @@ local function GetRandomPointInPart(Part)
     local Ry = (math.random() - 0.5) * (Size.Y * 0.9)
     local Rz = (math.random() - 0.5) * (Size.Z * 0.9)
     return CFramePos * CFrame.new(Rx, Ry, Rz)
+end
+
+local function GetButtonTouchCFrame(part)
+    if part.Size and typeof(part.CFrame) == "CFrame" then
+        return GetRandomPointInPart(part)
+    end
+    local pos = part.Position
+    if typeof(pos) == "Vector3" then
+        return CFrame.new(pos + Vector3.new((math.random() - 0.5), (math.random() - 0.5), (math.random() - 0.5)))
+    end
+    return part.CFrame
 end
 
 local function ScanMapButtons(Map, buttons, seenModels)
@@ -394,7 +425,32 @@ local function ScanMapButtons(Map, buttons, seenModels)
     end
 end
 
-local function StartAutoFarm(Map)
+local function ResolveMapDifficulty(Settings)
+    local ok, label = pcall(function()
+        local diffText = Workspace.Lobby.GameInfo.SurfaceGui.Frame.Difficulty.Difficulty.Text
+        return diffText:split(":")[1]:gsub("^%s*(.-)%s*$", "%1")
+    end)
+    if ok and label and DIFFICULTY_RANKS[label] then
+        return DIFFICULTY_RANKS[label], label
+    end
+    local raw = Settings and Settings:GetAttribute("Difficulty")
+    if raw == nil and Settings and Settings.FindFirstChild then
+        local valObj = Settings:FindFirstChild("Difficulty")
+        raw = valObj and valObj.Value or nil
+    end
+    if raw == nil and GameState and GameState.getMapData then
+        local mapData = GameState.getMapData()
+        raw = type(mapData) == "table" and (mapData.Difficulty or mapData.difficulty) or nil
+    end
+    if type(raw) == "string" and DIFFICULTY_RANKS[raw] then
+        return DIFFICULTY_RANKS[raw], raw
+    elseif type(raw) == "number" and RANK_BY_NUMBER[raw] then
+        return RANK_BY_NUMBER[raw], NAME_BY_NUMBER[raw]
+    end
+    return 0, tostring(label or "Unknown")
+end
+
+local function StartAutoFarm(Map, mapDisplayName)
     if State.CurrentlyFarming or State.PracticeMap == Map or (CompletedMaps and CompletedMaps[Map]) then return end
     local function aborted()
         return Session.Cancelled or not Map.Parent or getgenv().TAS_Active
@@ -408,6 +464,7 @@ local function StartAutoFarm(Map)
     while not Check("InGame") do
         if aborted() or os.clock() > enterDeadline then return end
         if Check("InLift") then
+            State.FarmPhase = "Waiting for teleport"
             lobbyDeadline = os.clock() + 8
         elseif os.clock() > lobbyDeadline then
             if CompletedMaps then CompletedMaps[Map] = true end
@@ -419,6 +476,10 @@ local function StartAutoFarm(Map)
     if State.CurrentlyFarming or State.PracticeMap == Map or (CompletedMaps and CompletedMaps[Map]) then return end
     State.CurrentlyFarming = true
     State.Escaped = false
+    if mapDisplayName and mapDisplayName ~= "" then
+        State.CurrentMapName = mapDisplayName
+    end
+    State.FarmPhase = "Waiting for countdown"
 
     local char, root, hum
     local healthConn, descendantConn
@@ -449,13 +510,18 @@ local function StartAutoFarm(Map)
             task.wait(0.05)
         until false
 
-        local initialPosition, initialCamera = root.CFrame, Camera.CFrame
+        local cam = GetCamera()
+        local initialPosition, initialCamera = root.CFrame, cam and cam.CFrame
         if State.AutoCollect then
+            State.FarmPhase = "Collecting items"
             CollectMapItems(Map)
             if cancelled() or not Check("InGame") then return end
             root.CFrame = initialPosition
         end
-        if not delay(State.StartDelay) then return end
+        if State.StartDelay > 0 then
+            State.FarmPhase = "Start delay"
+            if not delay(State.StartDelay) then return end
+        end
 
         local buttons, seenModels = {}, {}
         ScanMapButtons(Map, buttons, seenModels)
@@ -486,9 +552,10 @@ local function StartAutoFarm(Map)
         end
 
         local exitStart
+        local lastLocatorHit = os.clock()
         local escapeSerial = State.EscapeSerial
-        local zeroVel = Vector3 and Vector3.zero or nil
         while not cancelled() and Check("InGame") do
+            cam = GetCamera()
             local exit = Map:FindFirstChild("ExitRegion", true)
             if exit then
                 if State.PlayAfterButtons then
@@ -496,23 +563,29 @@ local function StartAutoFarm(Map)
                     root.Anchored = false
                     Noclip(State.Noclip)
                     root.CFrame = initialPosition
-                    if zeroVel then root.Velocity = zeroVel end
-                    Camera.CameraSubject, Camera.CFrame = hum, initialCamera
+                    ZeroVelocity(root)
+                    if cam then
+                        cam.CameraSubject = hum
+                        if initialCamera then cam.CFrame = initialCamera end
+                    end
                     State.PracticeMap = Map
+                    State.FarmPhase = "Manual finish"
                     if CompletedMaps then CompletedMaps[Map] = true end
                     Alert("Buttons complete. Returned to spawn for manual play.", "Success")
                     return
                 end
+                State.FarmPhase = "Touching exit"
                 Noclip(false)
                 root.Anchored = false
-                if Camera.CameraSubject ~= exit then
-                    Camera.CameraSubject = exit
+                if cam and cam.CameraSubject ~= exit then
+                    cam.CameraSubject = exit
                 end
                 exitStart = exitStart or os.clock()
                 if State.EscapeSerial ~= escapeSerial or State.Escaped then
                     if CompletedMaps then CompletedMaps[Map] = true end
                     if healthConn then healthConn:Disconnect(); healthConn = nil end
-                    Camera.CameraSubject = hum
+                    if cam then cam.CameraSubject = hum end
+                    State.FarmPhase = "Escaped"
                     Alert("Escape confirmed.", "Success")
                     if State.ResetAfterEscape and delay(State.ResetDelay) then
                         State.ResettingCharacter = true
@@ -523,26 +596,29 @@ local function StartAutoFarm(Map)
                 end
                 if os.clock() - exitStart > 15 then
                     if CompletedMaps then CompletedMaps[Map] = true end
-                    Camera.CameraSubject = hum
+                    if cam then cam.CameraSubject = hum end
+                    State.FarmPhase = "Idle"
                     Alert("No escape confirmation; stopping this map.", "Warning")
                     State.PracticeMap = Map
                     return
                 end
                 Advanced.forceWin()
                 root.CFrame = GetRandomPointInPart(exit)
-                if zeroVel then root.Velocity = zeroVel end
+                ZeroVelocity(root)
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
                 RunService.Heartbeat:Wait()
             else
-                if Camera.CameraSubject ~= hum then
-                    Camera.CameraSubject = hum
+                if cam and cam.CameraSubject ~= hum then
+                    cam.CameraSubject = hum
                 end
                 Noclip(true)
                 local direct = Advanced.directTarget(Map)
                 if direct then
+                    State.FarmPhase = "Pressing buttons"
+                    lastLocatorHit = os.clock()
                     root.Anchored = false
                     root.CFrame = GetRandomPointInPart(direct)
-                    if zeroVel then root.Velocity = zeroVel end
+                    ZeroVelocity(root)
                     hum:ChangeState(Enum.HumanoidStateType.Jumping)
                     task.wait(0.05)
                     if not cancelled() then
@@ -551,18 +627,20 @@ local function StartAutoFarm(Map)
                     end
                 else
                     root.Anchored = true
-                    if zeroVel then root.Velocity = zeroVel end
+                    ZeroVelocity(root)
+                    local allowNoGuiFallback = (os.clock() - lastLocatorHit) > 2.5
+                    local touchedAny = false
                     for _, entry in ipairs(buttons) do
                         if cancelled() or Map:FindFirstChild("ExitRegion", true) then break end
-                        if entry.part.Parent and entry.model:FindFirstChild("TouchInterest", true)
-                            and entry.model:FindFirstChildWhichIsA("BillboardGui", true) then
+                        local hasTouch = entry.part.Parent and entry.model:FindFirstChild("TouchInterest", true)
+                        local hasGui = hasTouch and entry.model:FindFirstChildWhichIsA("BillboardGui", true)
+                        if hasTouch and (hasGui or allowNoGuiFallback) then
+                            touchedAny = true
+                            if hasGui then lastLocatorHit = os.clock() end
+                            State.FarmPhase = "Pressing buttons"
                             root.Anchored = false
-                            local pos = entry.part.Position
-                            if typeof(pos) == "Vector3" then
-                                root.CFrame = CFrame.new(pos - Vector3.new(math.random(), math.random(), math.random()))
-                            else
-                                root.CFrame = entry.part.CFrame
-                            end
+                            root.CFrame = GetButtonTouchCFrame(entry.part)
+                            ZeroVelocity(root)
                             hum:ChangeState(Enum.HumanoidStateType.Jumping)
                             task.wait(0.05)
                             if cancelled() then break end
@@ -570,9 +648,12 @@ local function StartAutoFarm(Map)
                             task.wait(0.05)
                         end
                     end
+                    if not touchedAny then
+                        State.FarmPhase = #buttons == 0 and "Waiting for exit" or "Waiting for button"
+                    end
                     if root.Parent and not Map:FindFirstChild("ExitRegion", true) then
                         root.Anchored = true
-                        if zeroVel then root.Velocity = zeroVel end
+                        ZeroVelocity(root)
                     end
                     RunService.Heartbeat:Wait()
                 end
@@ -585,9 +666,13 @@ local function StartAutoFarm(Map)
     if descendantConn then pcall(function() descendantConn:Disconnect() end) end
     if healthConn then pcall(function() healthConn:Disconnect() end) end
     if root and root.Parent then root.Anchored = false end
-    if hum and hum.Parent then Camera.CameraSubject = hum end
+    local cam = GetCamera()
+    if cam and hum and hum.Parent then cam.CameraSubject = hum end
     Noclip(State.Noclip)
     State.CurrentlyFarming = false
+    if State.FarmPhase ~= "Manual finish" and State.FarmPhase ~= "Escaped" then
+        State.FarmPhase = (State.AutoFarm or State.AutoPlay) and (Check("InLift") and "Waiting in lift" or "Waiting in lobby") or "Idle"
+    end
     if not ok then Alert("Farm stopped: " .. tostring(err), "Error") end
 end
 
@@ -654,6 +739,9 @@ local function ProcessMap(NewMap)
         Advanced.onMap(NewMap)
         local readyDeadline = os.clock() + 120
         while NewMap.Name == "NewMap" and NewMap.Parent == Multiplayer and not Session.Cancelled and os.clock() < readyDeadline do
+            if (State.AutoFarm or State.AutoPlay) and not State.CurrentlyFarming then
+                State.FarmPhase = "Loading map"
+            end
             task.wait(0.05)
         end
         if Session.Cancelled or NewMap.Parent ~= Multiplayer then return end
@@ -670,13 +758,10 @@ local function ProcessMap(NewMap)
         local Settings = NewMap:WaitForChild("Settings", 10)
         local MapName = Settings and Settings:GetAttribute("MapName") or NewMap.Name
         local cleanName = CleanMapName(MapName)
+        State.CurrentMapName = cleanName
         local hasTasFile = HasTASFile(cleanName)
 
-        local _, result = pcall(function()
-            local diffText = Workspace.Lobby.GameInfo.SurfaceGui.Frame.Difficulty.Difficulty.Text
-            return diffText:split(":")[1]:gsub("^%s*(.-)%s*$", "%1")
-        end)
-        local currentRank = DIFFICULTY_RANKS[result] or 0
+        local currentRank, result = ResolveMapDifficulty(Settings)
         local targetRank = DIFFICULTY_RANKS[State.TargetDifficulty] or 999
 
         if State.EnforceDifficulty and currentRank > targetRank then
@@ -695,6 +780,7 @@ local function ProcessMap(NewMap)
                 if Check("InGame") and root and not root.Anchored and h and h.Health > 0 then
                     Alert("Map is too hard (" .. tostring(result) .. "). Resetting...", "Error")
                     CompletedMaps[NewMap] = true
+                    State.FarmPhase = "Resetting (difficulty)"
                     State.ResettingForDifficulty = true
                     h.Health = 0
                     return
@@ -712,14 +798,14 @@ local function ProcessMap(NewMap)
                     for _, conn in pairs(getgenv().TASConnections) do pcall(function() conn:Disconnect() end) end
                 end
                 getgenv().IsTASPlaying = false
-                StartAutoFarm(NewMap)
+                StartAutoFarm(NewMap, cleanName)
             end
             return
         end
 
         if State.AutoFarm and not State.AutoPlay then
-            Alert("Starting Auto-Farm operation on: " .. tostring(MapName), "Info")
-            StartAutoFarm(NewMap)
+            Alert("Starting Auto-Farm operation on: " .. tostring(cleanName ~= "" and cleanName or MapName), "Info")
+            StartAutoFarm(NewMap, cleanName)
         end
     end)
     ActiveMapTasks[NewMap] = nil
@@ -737,13 +823,17 @@ end))
 if GameState then
     GameState.onSurvived(function(survived, escapeTime)
         if survived == true and (State.CurrentlyFarming or getgenv().IsTASPlaying) then
-            State.EscapeSerial = State.EscapeSerial + 1
-            State.Escaped = true
             local formatted = escapeTime and string.format("%01d:%06.3f", math.floor(escapeTime / 60) % 60, escapeTime % 60) or nil
+            if formatted then State.LastEscapeTime = formatted end
+            if not State.Escaped then
+                State.EscapeSerial = State.EscapeSerial + 1
+                State.SessionEscapes = (State.SessionEscapes or 0) + 1
+                State.Escaped = true
+                task.delay(1, function()
+                    State.Escaped = false
+                end)
+            end
             Alert(formatted and ("Escape confirmed by server (Time: " .. formatted .. ")") or "Escape confirmed by server.", "Success")
-            task.delay(1, function()
-                State.Escaped = false
-            end)
         end
     end)
 end
@@ -752,6 +842,7 @@ TrackConnection(AlertRemote.OnClientEvent:Connect(function(msg)
     if type(msg) == "string" and State.CurrentlyFarming and (msg:lower():match("escaped") or msg:lower():match("survived")) then
         if not State.Escaped then
             State.EscapeSerial = State.EscapeSerial + 1
+            State.SessionEscapes = (State.SessionEscapes or 0) + 1
             State.Escaped = true
             task.delay(1, function()
                 State.Escaped = false
@@ -792,8 +883,21 @@ task.spawn(function()
     while task.wait(1) do
         if Session.Cancelled then break end
         Advanced.tick()
-        if not State.AutoFarm and not State.AutoPlay and CompletedMaps then
-            table.clear(CompletedMaps)
+        if not State.AutoFarm and not State.AutoPlay then
+            if CompletedMaps then table.clear(CompletedMaps) end
+            if State.FarmPhase ~= "Manual finish" then
+                State.FarmPhase = "Idle"
+                State.CurrentMapName = ""
+            end
+        elseif State.AutoFarm and not State.CurrentlyFarming and not (State.PracticeMap and State.PracticeMap.Parent) then
+            if Check("InLift") then
+                if State.FarmPhase ~= "Loading map" and State.FarmPhase ~= "Waiting for teleport" then
+                    State.FarmPhase = "Waiting in lift"
+                end
+            elseif not Check("InGame") then
+                State.FarmPhase = State.AutoJoinLift and "Joining lift" or "Waiting in lobby"
+                State.CurrentMapName = ""
+            end
         end
         if (State.AutoFarm or State.AutoPlay) and not State.CurrentlyFarming and not getgenv().TAS_Active then
             local pendingNewMap = Multiplayer:FindFirstChild("NewMap")
@@ -823,11 +927,11 @@ end)
 
 -- Auto Rebirth Loop
 task.spawn(function()
-    local lastRebirthAttempt = 0
+    local lastRebirthAttempt = -math.huge
     while task.wait(1) do
         if Session.Cancelled then break end
-        if State.AutoRebirth then
-            local now = os.time()
+        if State.AutoRebirth and not State.CurrentlyFarming and not Check("InGame") then
+            local now = os.clock()
             if now - lastRebirthAttempt >= State.RebirthInterval then
                 local key = GetSessionKey()
                 if key then
@@ -956,12 +1060,15 @@ local function StopAutomation()
     State.AutoFarm, State.AutoPlay, State.SelectTASMaps = false, false, false
     State.AutoCollect, State.AutoRebirth = false, false
     State.PracticeMap = nil
+    State.FarmPhase = "Idle"
+    State.CurrentMapName = ""
     if CompletedMaps then table.clear(CompletedMaps) end
     getgenv().TomatoAutoFarm = false
     if getgenv().FloodGUIStopPlayer then pcall(getgenv().FloodGUIStopPlayer, false) end
     Advanced.cleanup()
     Alert("Automation stopped.", "Info")
 end
+getgenv().FloodGUIStopAutomation = StopAutomation
 Session.Cleanup = function()
     if Session.Cleaned then return end
     Session.Cleaned = true

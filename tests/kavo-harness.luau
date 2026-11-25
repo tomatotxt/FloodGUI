@@ -159,6 +159,11 @@ return function(vendorSource,adapterSource,inputSource)
     assert(changed==enums.KeyCode.J and w.Open,"Binding J must not hide the window")
     key._frame.MouseButton1Click:Fire();input.WindowFocusReleased:Fire();assert(not w._native.Capturing)
     local reboundActions=0
+    local unboundFires=0
+    local unbound=page:Keybind({Name="Optional farm",Default=enums.KeyCode.Unknown,Callback=function()unboundFires+=1 end})
+    input.InputBegan:Fire({KeyCode=enums.KeyCode.Unknown,UserInputType=enums.UserInputType.MouseButton1},false)
+    assert(unboundFires==0,"Unbound Unknown keybind must never fire on mouse/touch input")
+    unbound:Destroy()
     local binding=page:Keybind({Name="Bind",Default=enums.KeyCode.Q})
     page:Keybind({Name="Existing",Default=enums.KeyCode.R,Callback=function()reboundActions+=1 end})
     binding._frame.MouseButton1Click:Fire()

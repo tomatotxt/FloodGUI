@@ -1043,6 +1043,9 @@ function Kavo.CreateLib(kavName, themeList, options)
 
             function Elements:NewKeybind(keytext, keyinf, first, callback)
                 local oldKey = first.Name
+                local function displayKey(name)
+                    return name == "Unknown" and "None" or name
+                end
                 local btn = Instance.new("TextButton", sectionInners)
                 btn.Size = UDim2.new(0, 352, 0, 33)
                 btn.AutoButtonColor = false
@@ -1076,7 +1079,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                 togName_2.Position = UDim2.new(0.727, 0, 0.272, 0)
                 togName_2.Size = UDim2.new(0, 70, 0, 14)
                 togName_2.Font = Enum.Font.GothamSemibold
-                togName_2.Text = oldKey
+                togName_2.Text = displayKey(oldKey)
                 togName_2.TextSize = 14.000
                 togName_2.TextXAlignment = Enum.TextXAlignment.Right
                 RegisterTheme(togName_2, "TextColor3", "SchemeColor")
@@ -1098,12 +1101,12 @@ function Kavo.CreateLib(kavName, themeList, options)
                 local capturing=false
                 function keyHandle:Set(key)
                     oldKey=key.Name
-                    togName_2.Text=oldKey
+                    togName_2.Text=displayKey(oldKey)
                 end
                 function keyHandle:Cancel()
                     capturing=false
                     if Tabs.Capturing==keyHandle then Tabs.Capturing=nil end
-                    togName_2.Text=oldKey
+                    togName_2.Text=displayKey(oldKey)
                 end
                 Connect(btn.MouseButton1Click,function()
                     if state.focusing or keyHandle.Disabled or not btn.Parent then return end
@@ -1120,7 +1123,7 @@ function Kavo.CreateLib(kavName, themeList, options)
                             keyHandle:Set(current.KeyCode)
                             if keyHandle.OnChanged then keyHandle.OnChanged(current.KeyCode) end
                         end
-                    elseif not Tabs.Capturing and Tabs.CapturedInput~=current and not processed and not input:GetFocusedTextBox() and current.KeyCode.Name==oldKey then
+                    elseif oldKey~="Unknown" and not Tabs.Capturing and Tabs.CapturedInput~=current and not processed and not input:GetFocusedTextBox() and current.KeyCode.Name==oldKey then
                         if callback then callback(current) end
                     end
                 end)

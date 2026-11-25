@@ -515,6 +515,13 @@ return function(sources)
 	main.controls.AutoPlay:Set(true)
 	main.controls.AutoFarm:Set(true)
 	assert(state.AutoFarm and not state.AutoPlay and globals.TomatoAutoFarm and effects.playerStopped)
+	-- Primary Farming controls must appear at the top of the Farming tab before any collapsed Section.
+	assert(main.tabs.farm.Controls[1] == main.controls.FarmStatus, "FarmStatus card must lead the Farming tab")
+	assert(main.tabs.farm.Controls[2] == main.controls.AutoFarm, "AutoFarm toggle must be immediately visible at top of Farming tab")
+	assert(main.tabs.farm.Controls[3] == main.controls.AutoJoinLift, "AutoJoinLift toggle must sit directly beneath AutoFarm")
+	assert(main.tabs.farm.Controls[4] == main.controls.StopTools, "StopTools button must sit in primary Farming group")
+	assert(main.tabs.farm.Controls[5].Kind == "Section", "Secondary Round behavior options follow in a collapsible section")
+	assert(not tostring(main.window.Status):find("Idle | Farm on", 1, true), "Active farm status must not read 'Idle | Farm on'")
 	main.controls.Noclip:Set(true)
 	assert(effects.noclip)
 	state.Noclip = false

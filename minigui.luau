@@ -18,10 +18,15 @@ local tab = window:NewTab("Auto")
 local section = tab:NewSection("Main")
 
 section:NewToggle("Auto-Farm", "Wins for your noob self!", function(enabled)
+	state.PracticeMap = nil
 	state.AutoFarm = enabled
+	state.FarmPhase = enabled and "Starting" or "Idle"
 	getgenv().TomatoAutoFarm = enabled
 	if enabled then
 		state.AutoPlay = false
+		if getgenv().FloodGUIStopPlayer then
+			pcall(getgenv().FloodGUIStopPlayer, false)
+		end
 	end
 end)
 
@@ -30,6 +35,8 @@ section:NewToggle("Auto-Play (TAS)", "Automatically plays TAS runs.", function(e
 	if enabled then
 		state.AutoFarm = false
 		getgenv().TomatoAutoFarm = false
+	elseif getgenv().FloodGUIStopPlayer then
+		pcall(getgenv().FloodGUIStopPlayer, false)
 	end
 end)
 
@@ -38,8 +45,14 @@ section:NewToggle("Noclip", "Walk through walls.", function(enabled)
 end)
 
 section:NewButton("Stop Automation", "Stops active farming and playback.", function()
+	if getgenv().FloodGUIStopAutomation then
+		pcall(getgenv().FloodGUIStopAutomation)
+		return
+	end
 	state.AutoFarm = false
 	state.AutoPlay = false
+	state.PracticeMap = nil
+	state.FarmPhase = "Idle"
 	getgenv().TomatoAutoFarm = false
 	getgenv().IsTASPlaying = false
 	if getgenv().FloodGUIStopPlayer then

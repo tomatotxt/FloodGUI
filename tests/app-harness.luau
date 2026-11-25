@@ -173,17 +173,22 @@ return function(source)
     env.State.AutoFarm=true;env.State.AutoCollect=true;env.State.StartDelay=0;env.State.EscapeSerial=0;env.State.Escaped=false
     -- Start in lift (unanchored!): StartAutoFarm must NOT start farming or collect items in lift.
     root.Position={X=-25,Y=-144,Z=139};root.Anchored=false;root.CFrame="in_lift"
-    local farm=compile(section("-- [6] AUTO FARM ENGINE","-- [7] MAP LOAD EVENT").."\nreturn StartAutoFarm")
-    local farmCo=coroutine.create(function()farm(farmMap)end)
+    local farmModule=compile(section("-- [6] AUTO FARM ENGINE","-- [7] MAP LOAD EVENT").."\nreturn {farm=StartAutoFarm,diff=ResolveMapDifficulty}")
+    local farm=farmModule.farm
+    -- Streamed-out Lobby difficulty fallback must read Settings attribute / GameState mapData.
+    env.Workspace={}
+    local rankAttr,nameAttr=farmModule.diff({GetAttribute=function(_,k)return k=="Difficulty" and 5 or nil end})
+    assert(rankAttr==5 and nameAttr=="Crazy","ResolveMapDifficulty must map numeric Settings Difficulty attribute when Lobby is streamed out")
+    local farmCo=coroutine.create(function()farm(farmMap,"Blue Moon")end)
     assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="suspended")
-    assert(not env.State.CurrentlyFarming and root.CFrame=="in_lift","Must not start farming or collect items while still in lift")
+    assert(not env.State.CurrentlyFarming and env.State.FarmPhase=="Waiting for teleport" and root.CFrame=="in_lift","Must not start farming or collect items while still in lift")
     -- Teleport to map while anchored for countdown: still must wait for unanchor!
     root.Position={X=9000,Y=3200,Z=9000};root.Anchored=true;root.CFrame="map_spawn"
     assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="suspended")
-    assert(env.State.CurrentlyFarming and root.CFrame=="map_spawn","Must wait for round-start unanchor before moving root")
+    assert(env.State.CurrentlyFarming and env.State.CurrentMapName=="Blue Moon" and env.State.FarmPhase=="Waiting for countdown" and root.CFrame=="map_spawn","Must wait for round-start unanchor before moving root")
     -- Unanchor -> round starts: collects items, restores map_spawn, then touches active button (ignoring stale activeBtn).
     root.Anchored=false
-    assert(coroutine.resume(farmCo) and root.CFrame=="btn_cf","Must touch active button hitbox after unanchor")
+    assert(coroutine.resume(farmCo) and root.CFrame=="btn_cf" and env.State.FarmPhase=="Pressing buttons","Must touch active button hitbox after unanchor")
     assert(coroutine.resume(farmCo)) -- finish 0.05s Jumping wait
     -- Clear button TouchInterest -> re-anchors between scans, then spawn ExitRegion -> enters ExitRegion despite stale GameState.
     touchInterest=nil
@@ -191,11 +196,11 @@ return function(source)
     assert(root.Anchored,"Must re-anchor root between button scans so Noclip never drops player into void")
     exitPart={CFrame="exit_cf"}
     assert(coroutine.resume(farmCo)) -- next iteration sees ExitRegion -> Noclip(false), moves to exit_cf, yields on Heartbeat
-    assert(root.CFrame=="exit_cf" and env.Camera.CameraSubject==exitPart,"Must enter ExitRegion immediately when it spawns")
+    assert(root.CFrame=="exit_cf" and env.State.FarmPhase=="Touching exit" and env.Camera.CameraSubject==exitPart,"Must enter ExitRegion immediately when it spawns")
     -- Confirm escape -> exits cleanly and restores CameraSubject + CurrentlyFarming=false.
     env.State.EscapeSerial=1
     assert(coroutine.resume(farmCo) and coroutine.status(farmCo)=="dead")
-    assert(not env.State.CurrentlyFarming and env.Camera.CameraSubject==humanoid,"Farm must clean up state after confirmed escape")
+    assert(not env.State.CurrentlyFarming and env.State.FarmPhase=="Escaped" and env.Camera.CameraSubject==humanoid,"Farm must clean up state after confirmed escape")
 
     print("PASS: actual main startup defaults, movement ownership, selected Farm flow, lift/round-start truth and autofarm lifecycle")
 end
